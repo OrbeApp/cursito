@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check shell scripts
+        run: |
+          for script in scripts/*.sh; do bash -n "$script"; done
+
+      - name: Swift tests
+        run: swift test
+
+      - name: Export/import end to end
+        run: scripts/test-sync.sh
+
+      - name: Repo updates end to end
+        run: scripts/test-update-repos.sh
+
+      - name: Build the app bundle
+        run: scripts/build-app.sh
