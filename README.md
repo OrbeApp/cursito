@@ -6,17 +6,29 @@ folder both Macs can see).
 
 - **Export This Mac** on your main Mac writes the setup to a single
   `cursor-sync.tar.gz`.
-- On the other Mac, the menu bar icon fills in when there's an export it hasn't
-  imported. **Review…** shows what would change and **Import…** applies it: it
+- On the other Mac, the menu bar icon fills in and a notification arrives when
+  there's an export it hasn't imported. **Review…** shows what would change,
+  including MCP servers that won't start there, and **Import…** applies it: it
   quits Cursor, backs up the current setup, imports and reopens Cursor.
-- **Restore Backup** rolls back any of the last five imports.
+- **Restore…** rolls back any of the last five imports, or imports one of the
+  last three exports a newer one replaced (kept in `previous-exports/` in the
+  sync folder), so overwriting an export by mistake isn't final either.
+- While it exports or imports, the menu bar icon turns into an up or down
+  arrow, and a notification tells you when it's done if the menu is closed.
 
 Sync goes one way: the Mac that exports last is the source of truth. Cursito
 warns you before overwriting an export the other Mac hasn't imported yet.
 
+**Heading Out** and **Just Arrived** do the whole switch in one click.
+Heading Out fetches your repos, exports this Mac and lists the work that only
+lives here: uncommitted changes, unpushed commits, branches without an
+upstream. Just Arrived imports the other Mac's setup if there's a new one and
+pulls every repo.
+
 **Cursor Usage** shows what you've spent in the current billing cycle and how
-close you are to your on-demand limit. **Details** breaks it down by model and
-by day, and lists every team member's spend. It reads Cursor's
+close you are to your on-demand limit. **Details** breaks it down by model, by
+day and by agent conversation, and lists every team member's spend. It reads
+Cursor's
 [Admin API](https://cursor.com/docs/account/teams/admin-api), so it needs an
 Enterprise team and an admin key (see [Cursor Usage](#cursor-usage)).
 
@@ -47,6 +59,13 @@ Not synced:
 
 An import mirrors the export: skills or plugins that exist only on the importing
 Mac are removed. The previous state stays in `~/.cursito/backups/`.
+
+**Review…** also checks the exported MCP servers against this Mac: it flags
+servers whose command (`npx`, `uvx`, an absolute path…) isn't installed, remote
+servers that may ask you to log in because OAuth tokens aren't synced, and
+`localhost` servers that need their app running. It looks in the usual install
+folders (Homebrew, nvm, bun, cargo, `~/.local/bin`…), not in your shell's
+`PATH`, so a command installed somewhere unusual can show up as missing.
 
 ## Install
 
@@ -86,6 +105,11 @@ Disconnect** in the Details window removes it.
 
 **Show spend in the menu bar** puts this cycle's spend next to the icon.
 
+From the third day of the cycle, the menu shows where spend ends up at the
+cycle's average daily pace ("On pace for ~$6,984 by Nov 8") and, with a limit
+or budget, the day that pace reaches it. With notifications on, Cursito sends
+that once per cycle, before the threshold warning.
+
 The warning measures spend against your per-user on-demand limit in Cursor
 or, if you have none, against a **monthly budget** you set in Cursito (it
 counts everything spent in the cycle, included usage too). Once spend
@@ -99,6 +123,11 @@ off under `swift run`.
 Cursor aggregates usage hourly, so Cursito refreshes at most once an hour in
 the background; the refresh button forces it. Costs are what Cursor
 counts towards spend (`chargedCents`), included usage and on-demand alike.
+
+**Sessions** groups requests by agent conversation, most expensive first, with
+the model that cost the most in each. Right-click one to copy its conversation
+ID. Requests outside a conversation (Tab, Cmd+K…) are counted in the total
+below the table.
 
 The Admin API is Cursor's only documented way to read usage. Apps that read
 the session of the Cursor app itself stopped working when Cursor started
@@ -117,10 +146,17 @@ scripts/sync-cursor.sh info   -d "$SYNC"   # who exported, and whether this Mac 
 scripts/sync-cursor.sh diff   -d "$SYNC"   # what an import would change
 scripts/sync-cursor.sh import -d "$SYNC"   # other Mac, with Cursor closed
 scripts/sync-cursor.sh import -d ~/.cursito/backups/20261029-105854   # restore a backup
+scripts/sync-cursor.sh verify -d "$SYNC"   # can this Mac read (and decrypt) the export?
 ```
 
 Run `scripts/sync-cursor.sh -h` for every option. A `-d` path ending in
 `.tar.gz` is used as a single archive; any other path as a plain folder.
+Exporting to an archive keeps the one it replaces in `previous-exports/`
+(last three, named `<date> <host>.tar.gz`); import one with `-d` to undo an
+export. Folder exports aren't kept.
+With `CURSITO_PASSPHRASE` in the environment, `export` encrypts; reading an
+encrypted export without it asks for the passphrase in a terminal, and exits
+with status 3 otherwise or when it's wrong.
 
 Git Repos runs [`scripts/update-repos.sh`](scripts/update-repos.sh):
 
@@ -141,6 +177,18 @@ archive is created with `600` permissions, but anything in iCloud Drive is only
 end-to-end encrypted if you turn on
 [Advanced Data Protection](https://support.apple.com/en-us/102651). Don't put
 the sync folder in a git repository or a shared folder.
+
+**Encrypt Exports…** (under the sync folder in the menu) encrypts everything
+but a small manifest (who exported and when) with `openssl enc`: AES-256-CBC,
+with the key derived from your passphrase by PBKDF2-SHA256 with 600,000
+iterations and a random salt. Use the same passphrase on both Macs; Cursito
+keeps it in each Mac's login keychain and passes it to the script through the
+environment, never as an argument. When an encrypted export arrives on a Mac
+that doesn't have the passphrase, Cursito asks for it before quitting Cursor.
+This protects what's in the file, not its integrity: someone who can write to
+your sync folder can still replace the export, as they could without
+encryption. Forget the passphrase and the export can't be read; export again
+from the other Mac with a new one.
 
 ## How it works
 
@@ -164,7 +212,7 @@ backup lets you roll back.
 ```bash
 swift run Cursito          # run the app from the checkout (uses scripts/sync-cursor.sh)
 swift test                 # parsing, import-state rules and the usage client
-scripts/test-sync.sh       # end-to-end export/import between two fake home folders
+scripts/test-sync.sh       # end-to-end export/import (plain and encrypted) between two fake home folders
 scripts/test-update-repos.sh   # update-repos.sh against throwaway git repos
 ```
 

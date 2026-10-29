@@ -18,6 +18,7 @@ final class UsageModel {
     private static let notifiesKey = "usageNotifiesNearLimit"
     private static let lastAlertKey = "usageLastLimitAlert"
     private static let budgetKey = "usageMonthlyBudget"
+    private static let lastForecastAlertKey = "usageLastForecastAlertCycle"
 
     static let warningPercentChoices = [50, 70, 80, 90, 100]
 
@@ -52,6 +53,7 @@ final class UsageModel {
         didSet {
             UserDefaults.standard.set(monthlyBudget, forKey: Self.budgetKey)
             UserDefaults.standard.removeObject(forKey: Self.lastAlertKey)
+            UserDefaults.standard.removeObject(forKey: Self.lastForecastAlertKey)
         }
     }
 
@@ -121,6 +123,23 @@ final class UsageModel {
         return capFraction
     }
 
+    /// This cycle's total spend at the average pace so far.
+    var forecast: SpendForecast? {
+        guard let me, let cycleStart, let lastUpdated else { return nil }
+        return SpendForecast(spentCents: me.totalCents, cycleStart: cycleStart, now: lastUpdated)
+    }
+
+    /// When the spend measured against the cap reaches it at this pace, if that's before the cycle ends.
+    var capReachedAt: Date? {
+        guard let capSpentCents, let spendCap, let cycleStart, let lastUpdated else { return nil }
+        return SpendForecast(
+            spentCents: capSpentCents,
+            cycleStart: cycleStart,
+            now: lastUpdated,
+            capCents: spendCap.dollars * 100
+        )?.capReachedAt
+    }
+
     private var currentAlert: LimitAlert? {
         let cycle = Int(cycleStart?.timeIntervalSince1970 ?? 0)
         return LimitAlert.current(fraction: capFraction, warningPercent: warningPercent, cycle: cycle)
@@ -148,13 +167,32 @@ final class UsageModel {
 
     /// Turning notifications on asks macOS for permission first.
     func setNotifiesNearLimit(_ isOn: Bool) async {
-        notifiesNearLimit = isOn ? await LimitNotifier.requestPermission() : false
+        notifiesNearLimit = isOn ? await Notifier.requestPermission() : false
         await notifyIfNeeded()
+    }
+
+    private func notifyIfNeeded() async {
+        await notifyAboutForecast()
+        await notifyAboutThreshold()
+    }
+
+    /// Once per billing cycle, when the pace would reach the cap before the cycle ends.
+    private func notifyAboutForecast() async {
+        guard notifiesNearLimit, let spendCap, let reachedAt = capReachedAt, let cycleStart else { return }
+        let cycle = Int(cycleStart.timeIntervalSince1970)
+        guard UserDefaults.standard.integer(forKey: Self.lastForecastAlertKey) != cycle else { return }
+
+        var body = "At this pace you'll reach \((spendCap.dollars * 100).wholeDollarsText) around \(reachedAt.dayText)"
+        if let forecast {
+            body += " and end the cycle near \(forecast.projectedCents.wholeDollarsText)"
+        }
+        await Notifier.post(.usageForecast, title: "On pace to pass your Cursor spend \(spendCap.name)", body: body + ".")
+        UserDefaults.standard.set(cycle, forKey: Self.lastForecastAlertKey)
     }
 
     /// Posts a notification the first time spend crosses the threshold, and again
     /// past the cap, in each billing cycle.
-    private func notifyIfNeeded() async {
+    private func notifyAboutThreshold() async {
         guard notifiesNearLimit, let spendCap, let spent = capSpentCents, let fraction = capFraction,
               let alert = currentAlert
         else { return }
@@ -170,7 +208,7 @@ final class UsageModel {
         case .budget: spent.centsText
         }
         let body = "\(spentText) of \((spendCap.dollars * 100).centsText) this billing cycle."
-        await LimitNotifier.post(title: title, body: body)
+        await Notifier.post(.usageLimit, title: title, body: body)
         UserDefaults.standard.set(alert.stored, forKey: Self.lastAlertKey)
     }
 

@@ -5,8 +5,19 @@ import Security
 struct KeychainItem: Sendable {
     let service: String
     let account: String
+    /// What Keychain Access shows for the item.
+    let label: String
 
-    static let cursorAdminAPIKey = KeychainItem(service: "com.orbeapp.cursito", account: "cursor-admin-api-key")
+    static let cursorAdminAPIKey = KeychainItem(
+        service: "com.orbeapp.cursito",
+        account: "cursor-admin-api-key",
+        label: "Cursito: Cursor Admin API key"
+    )
+    static let exportPassphrase = KeychainItem(
+        service: "com.orbeapp.cursito",
+        account: "export-passphrase",
+        label: "Cursito: export passphrase"
+    )
 
     func read() -> String? {
         var query = baseQuery
@@ -28,7 +39,7 @@ struct KeychainItem: Sendable {
         }
         var item = baseQuery
         item[kSecValueData as String] = data
-        item[kSecAttrLabel as String] = "Cursito: Cursor Admin API key"
+        item[kSecAttrLabel as String] = label
         let addStatus = SecItemAdd(item as CFDictionary, nil)
         if addStatus != errSecSuccess { throw KeychainError(status: addStatus) }
     }

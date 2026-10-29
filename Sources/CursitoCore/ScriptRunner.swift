@@ -16,14 +16,15 @@ public struct ScriptRunner: Sendable {
     }
 
     /// Runs the script with `arguments` off the main thread, with stdout and stderr combined.
-    public func run(_ arguments: [String]) async -> ScriptResult {
+    /// `environment` adds variables, so secrets never show up in the arguments.
+    public func run(_ arguments: [String], environment: [String: String] = [:]) async -> ScriptResult {
         let arguments = [scriptURL.path] + arguments
         return await Task.detached(priority: .userInitiated) {
-            Self.runBlocking(arguments)
+            Self.runBlocking(arguments, extraEnvironment: environment)
         }.value
     }
 
-    private static func runBlocking(_ arguments: [String]) -> ScriptResult {
+    private static func runBlocking(_ arguments: [String], extraEnvironment: [String: String]) -> ScriptResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = arguments
@@ -32,6 +33,7 @@ public struct ScriptRunner: Sendable {
         // Apps opened from Finder get a minimal PATH without the `cursor` CLI
         environment["PATH"] = "/usr/local/bin:/opt/homebrew/bin:"
             + (environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
+        environment.merge(extraEnvironment) { _, new in new }
         process.environment = environment
 
         let pipe = Pipe()

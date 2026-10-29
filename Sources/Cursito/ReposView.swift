@@ -78,6 +78,12 @@ private struct RepoRow: View {
                     .frame(width: 16)
                 Text(repo.name)
                 Spacer()
+                if repo.uncommittedChanges > 0, repo.state != .dirty {
+                    Label("\(repo.uncommittedChanges)", systemImage: "pencil")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .help("\(repo.uncommittedChanges) uncommitted change(s)")
+                }
                 Text(repo.detail)
                     .font(.caption)
                     .foregroundStyle(repo.state.needsAttention ? color : .secondary)

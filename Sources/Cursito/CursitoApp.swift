@@ -2,14 +2,23 @@ import SwiftUI
 
 @main
 struct CursitoApp: App {
-    @State private var model = SyncModel()
-    @State private var repos = ReposModel()
+    @State private var model: SyncModel
+    @State private var repos: ReposModel
+    @State private var handoff: Handoff
     @State private var usage = UsageModel()
     @State private var updates = UpdateChecker()
 
+    init() {
+        let model = SyncModel()
+        let repos = ReposModel()
+        _model = State(initialValue: model)
+        _repos = State(initialValue: repos)
+        _handoff = State(initialValue: Handoff(sync: model, repos: repos))
+    }
+
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(model: model, usage: usage, repos: repos, updates: updates)
+            MenuContent(model: model, usage: usage, repos: repos, handoff: handoff, updates: updates)
         } label: {
             MenuBarLabel(sync: model, usage: usage)
         }

@@ -111,6 +111,40 @@ struct CursorAdminAPITests {
     }
 }
 
+struct SpendForecastTests {
+    private let calendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }()
+    private var cycleStart: Date { calendar.date(from: DateComponents(year: 2026, month: 10, day: 8))! }
+    private func day(_ offset: Double) -> Date { cycleStart.addingTimeInterval(offset * 86_400) }
+
+    @Test func projectsTheAveragePaceToTheEndOfTheCycle() throws {
+        // 10 days at $100/day in a 31-day cycle
+        let forecast = try #require(SpendForecast(spentCents: 100_000, cycleStart: cycleStart, now: day(10), calendar: calendar))
+        #expect(forecast.cycleEnd == day(31))
+        #expect(abs(forecast.projectedCents - 310_000) < 0.01)
+        #expect(forecast.capReachedAt == nil)
+    }
+
+    @Test func saysWhenThePaceReachesTheCap() throws {
+        let forecast = try #require(SpendForecast(spentCents: 100_000, cycleStart: cycleStart, now: day(10), capCents: 200_000, calendar: calendar))
+        #expect(forecast.capReachedAt == day(20))
+
+        let notThisCycle = SpendForecast(spentCents: 100_000, cycleStart: cycleStart, now: day(10), capCents: 500_000, calendar: calendar)
+        #expect(notThisCycle?.capReachedAt == nil)
+        let alreadyPast = SpendForecast(spentCents: 100_000, cycleStart: cycleStart, now: day(10), capCents: 50_000, calendar: calendar)
+        #expect(alreadyPast?.capReachedAt == nil)
+    }
+
+    @Test func waitsForEnoughOfTheCycle() {
+        #expect(SpendForecast(spentCents: 10_000, cycleStart: cycleStart, now: day(1), calendar: calendar) == nil)
+        #expect(SpendForecast(spentCents: 0, cycleStart: cycleStart, now: day(10), calendar: calendar) == nil)
+        #expect(SpendForecast(spentCents: 10_000, cycleStart: cycleStart, now: day(40), calendar: calendar) == nil)
+    }
+}
+
 struct LimitAlertTests {
     @Test func alertsAtTheThresholdAndAgainPastTheLimit() {
         #expect(LimitAlert.current(fraction: 0.79, warningPercent: 80, cycle: 1) == nil)
@@ -133,10 +167,11 @@ struct LimitAlertTests {
 }
 
 struct UsageReportTests {
-    private static func event(_ model: String, cents: Double, day: Int, tokens: Int = 0) throws -> UsageEvent {
+    private static func event(_ model: String, cents: Double, day: Int, tokens: Int = 0, conversation: String? = nil) throws -> UsageEvent {
         let milliseconds = Date(timeIntervalSince1970: 1_767_225_600 + Double(day) * 86_400 + 3_600).epochMilliseconds
+        let conversationField = conversation.map { #""conversationId": "\#($0)", "# } ?? ""
         let json = """
-        {"timestamp": "\(milliseconds)", "model": "\(model)", "chargedCents": \(cents), "tokenUsage": {"inputTokens": \(tokens)}}
+        {\(conversationField)"timestamp": "\(milliseconds)", "model": "\(model)", "chargedCents": \(cents), "tokenUsage": {"inputTokens": \(tokens)}}
         """
         return try JSONDecoder().decode(UsageEvent.self, from: Data(json.utf8))
     }
@@ -165,5 +200,28 @@ struct UsageReportTests {
         #expect(report.byDay.map(\.chargedCents) == [60, 0, 15, 0])
         #expect(report.byDay.map(\.requests) == [2, 0, 1, 0])
         #expect(report.requests == 3 && report.tokens == 310 && report.chargedCents == 75)
+        #expect(report.bySession.isEmpty)
+    }
+
+    @Test func groupsConversationsMostExpensiveFirst() throws {
+        let start = Date(timeIntervalSince1970: 1_767_225_600)
+        let report = UsageReport(
+            events: [
+                try Self.event("sonnet", cents: 10, day: 0, conversation: "a"),
+                try Self.event("opus", cents: 30, day: 1, conversation: "a"),
+                try Self.event("sonnet", cents: 5, day: 1, conversation: "a"),
+                try Self.event("gpt", cents: 20, day: 2, conversation: "b"),
+                try Self.event("tab", cents: 99, day: 2),
+            ],
+            from: start,
+            to: start.addingTimeInterval(3 * 86_400)
+        )
+
+        #expect(report.bySession.map(\.conversationID) == ["a", "b"])
+        let first = report.bySession[0]
+        #expect(first.requests == 3 && first.chargedCents == 45)
+        #expect(first.mainModel == "opus")
+        #expect(first.started == start.addingTimeInterval(3_600))
+        #expect(first.lastActivity == start.addingTimeInterval(86_400 + 3_600))
     }
 }

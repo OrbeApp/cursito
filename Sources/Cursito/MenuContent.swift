@@ -5,6 +5,7 @@ struct MenuContent: View {
     let model: SyncModel
     let usage: UsageModel
     let repos: ReposModel
+    let handoff: Handoff
     let updates: UpdateChecker
     @Environment(\.openWindow) private var openWindow
     @AppStorage(MenuBarLabel.showsSpendKey) private var showsSpendInMenuBar = false
@@ -25,6 +26,7 @@ struct MenuContent: View {
                     .help("Open the release page on GitHub")
                 }
             }
+            handoffButtons
             Divider()
             cursorSection
             Divider()
@@ -37,6 +39,8 @@ struct MenuContent: View {
         .padding(16)
         .frame(width: 320)
         .task { await model.refresh() }
+        .onAppear { model.isMenuOpen = true }
+        .onDisappear { model.isMenuOpen = false }
     }
 
     private func sectionHeader(_ title: String, systemImage: String, activity: String?) -> some View {
@@ -51,6 +55,27 @@ struct MenuContent: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private var handoffButtons: some View {
+        HStack(spacing: 8) {
+            Button {
+                Task { await handoff.leave() }
+            } label: {
+                Label("Heading Out", systemImage: "figure.walk.departure")
+                    .frame(maxWidth: .infinity)
+            }
+            .help("Export this Mac's Cursor setup and check every repo for work that isn't pushed")
+            Button {
+                Task { await handoff.arrive() }
+            } label: {
+                Label("Just Arrived", systemImage: "figure.walk.arrival")
+                    .frame(maxWidth: .infinity)
+            }
+            .help("Import the other Mac's Cursor setup if there's a new one, then pull every repo")
+        }
+        .buttonStyle(.bordered)
+        .disabled(handoff.isRunning || model.isBusy || repos.isRunning)
     }
 
     private var cursorSection: some View {
@@ -76,19 +101,50 @@ struct MenuContent: View {
                 change: model.chooseSyncFolder,
                 isDisabled: model.isBusy
             )
-            Menu("Restore Backup…") {
-                ForEach(model.backups) { backup in
-                    Button(backup.date.shortText) {
-                        Task { await model.restore(backup) }
+            HStack {
+                Menu("Restore…") {
+                    if !model.backups.isEmpty {
+                        Section("Before an import on this Mac") {
+                            ForEach(model.backups) { backup in
+                                Button(backup.date.shortText) {
+                                    Task { await model.restore(backup) }
+                                }
+                            }
+                        }
+                    }
+                    if !model.previousExports.isEmpty {
+                        Section("Previous exports") {
+                            ForEach(model.previousExports) { export in
+                                Button("\(export.host) · \(export.date.shortText)") {
+                                    Task { await model.importPrevious(export) }
+                                }
+                            }
+                        }
                     }
                 }
+                .menuStyle(.borderlessButton)
+                .controlSize(.small)
+                .fixedSize()
+                .disabled((model.backups.isEmpty && model.previousExports.isEmpty) || model.isBusy)
+                .help(model.backups.isEmpty && model.previousExports.isEmpty
+                    ? "Backups appear here after your first import, and replaced exports after your next export"
+                    : "Undo an import, or import an export that a newer one replaced")
+                Spacer(minLength: 4)
+                Button {
+                    model.editEncryption()
+                } label: {
+                    Label(
+                        model.encryptsExports ? "Encrypted" : "Encrypt Exports…",
+                        systemImage: model.encryptsExports ? "lock.fill" : "lock.open"
+                    )
+                }
+                .buttonStyle(.link)
+                .disabled(model.isBusy)
+                .help(model.encryptsExports
+                    ? "Exports from this Mac are encrypted with your passphrase. Click to change it or turn it off."
+                    : "Encrypt exports with a passphrase, so only your Macs can read them")
             }
-            .menuStyle(.borderlessButton)
-            .controlSize(.small)
-            .fixedSize()
             .font(.caption)
-            .disabled(model.backups.isEmpty || model.isBusy)
-            .help(model.backups.isEmpty ? "Backups appear here after your first import" : "Undo an import")
         }
     }
 
@@ -182,7 +238,7 @@ struct MenuContent: View {
             )
 
             if !usage.isConnected {
-                Text("What you've spent this billing cycle, by model and by day. Needs an Admin API key from an Enterprise team.")
+                Text("What you've spent this billing cycle, by model, day and conversation. Needs an Admin API key from an Enterprise team.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -284,6 +340,17 @@ struct MenuContent: View {
                 Text("On-demand \(me.onDemandCents.centsText) · no limit")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+            if let forecast = usage.forecast {
+                Text("On pace for ~\(forecast.projectedCents.wholeDollarsText) by \(forecast.cycleEnd.dayText)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help("This cycle's average spend per day, carried to the end of the cycle")
+            }
+            if let reachedAt = usage.capReachedAt, let cap = usage.spendCap {
+                Label("Reaches your \(cap.name) around \(reachedAt.dayText)", systemImage: "chart.line.uptrend.xyaxis")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
             if let top = usage.topModel {
                 Text("Top model: \(top.model) · \(top.chargedCents.centsText)")
@@ -442,8 +509,14 @@ struct MenuContent: View {
     }
 
     private func exportedLine(_ info: ExportInfo) -> String {
-        let when = info.exportedAt.relativeText
-        return info.cursorVersion.isEmpty ? when : "\(when) · Cursor \(info.cursorVersion)"
+        var parts = [info.exportedAt.relativeText]
+        if !info.cursorVersion.isEmpty {
+            parts.append("Cursor \(info.cursorVersion)")
+        }
+        if info.isEncrypted {
+            parts.append("encrypted")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func show(_ id: String) {

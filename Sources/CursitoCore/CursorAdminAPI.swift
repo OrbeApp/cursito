@@ -198,6 +198,8 @@ public struct UsageEventsPage: Decodable, Sendable {
 public struct UsageEvent: Decodable, Sendable, Equatable {
     public let date: Date?
     public let userEmail: String
+    /// The agent conversation the request belongs to, when it belongs to one.
+    public let conversationID: String?
     public let model: String
     public let kind: String
     public let maxMode: Bool
@@ -211,7 +213,7 @@ public struct UsageEvent: Decodable, Sendable, Equatable {
     public var totalTokens: Int { inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens }
 
     private enum CodingKeys: String, CodingKey {
-        case timestamp, userEmail, model, kind, maxMode, chargedCents, tokenUsage
+        case timestamp, userEmail, conversationId, model, kind, maxMode, chargedCents, tokenUsage
     }
 
     private enum TokenKeys: String, CodingKey {
@@ -222,6 +224,7 @@ public struct UsageEvent: Decodable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         date = container.lenientDouble(.timestamp).map(Date.init(epochMilliseconds:))
         userEmail = (try? container.decodeIfPresent(String.self, forKey: .userEmail)) ?? ""
+        conversationID = (try? container.decodeIfPresent(String.self, forKey: .conversationId)).flatMap { $0.isEmpty ? nil : $0 }
         let model = (try? container.decodeIfPresent(String.self, forKey: .model)) ?? ""
         self.model = model.isEmpty ? "unknown" : model
         kind = (try? container.decodeIfPresent(String.self, forKey: .kind)) ?? ""

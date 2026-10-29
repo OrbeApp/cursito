@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// The menu bar item: the sync icon, optionally this cycle's spend, and a gauge
-/// with the percentage once on-demand spend nears the limit.
+/// The menu bar item: the sync icon (an arrow while exporting or importing), optionally
+/// this cycle's spend, and a gauge with the percentage once on-demand spend nears the limit.
 struct MenuBarLabel: View {
     static let showsSpendKey = "menuBarShowsSpend"
 
@@ -16,7 +16,7 @@ struct MenuBarLabel: View {
     }
 
     private var symbol: String {
-        guard let fraction = usage.limitWarning else { return sync.menuBarSymbol }
+        guard sync.iconActivity == .idle, let fraction = usage.limitWarning else { return sync.menuBarSymbol }
         return fraction >= 1 ? "exclamationmark.triangle.fill" : "gauge.with.dots.needle.67percent"
     }
 

@@ -79,10 +79,14 @@ fi
 # Writes "state<TAB>repo<TAB>detail" to $out.status and git's own errors to $out.log
 update_repo() {
   local dir="$1" out="$2"
-  local name branch upstream counts ahead behind err
+  local name branch upstream counts ahead behind err wip
   name="$(basename "$dir")"
 
   cd "$dir" || { printf 'ERROR\t%s\tcan'"'"'t enter the folder\n' "$name" > "$out.status"; return; }
+
+  # Reported on its own: a repo can be up to date and still hold work in progress
+  wip="$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+  [ "${wip:-0}" -gt 0 ] && echo "$wip" > "$out.wip"
 
   branch="$(git symbolic-ref --short -q HEAD)"
   if [ -z "$branch" ]; then
@@ -184,8 +188,11 @@ for dir in "${repos[@]}"; do
     *)        icon="?"; color= ;;
   esac
 
+  wip="$(cat "$TMPDIR_RUN/$name.wip" 2>/dev/null || echo 0)"
+
   if [ "$PORCELAIN" -eq 1 ]; then
     printf 'REPO\t%s\t%s\t%s\n' "$state" "$repo" "$detail"
+    [ "$wip" -gt 0 ] && printf 'WIP\t%s\t%s\n' "$name" "$wip"
     if [ -s "$TMPDIR_RUN/$name.log" ]; then
       while IFS= read -r log_line; do
         printf 'LOG\t%s\t%s\n' "$name" "$log_line"
@@ -195,6 +202,7 @@ for dir in "${repos[@]}"; do
   fi
 
   printf '%s %s%-38s%s %s\n' "$icon" "$BOLD" "$repo" "$RESET" "${color}${detail}${RESET}"
+  [ "$wip" -gt 0 ] && echo "    ${YELLOW}$wip uncommitted change(s)${RESET}"
   if [ -s "$TMPDIR_RUN/$name.log" ]; then
     sed 's/^/    /' "$TMPDIR_RUN/$name.log"
   fi

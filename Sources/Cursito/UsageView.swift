@@ -11,6 +11,7 @@ struct UsageView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case models = "Models"
         case days = "Days"
+        case sessions = "Sessions"
         case team = "Team"
 
         var id: Self { self }
@@ -89,6 +90,9 @@ struct UsageView: View {
         if let cycleStart = usage.cycleStart {
             parts.append("Billing cycle since \(cycleStart.dayText)")
         }
+        if let forecast = usage.forecast {
+            parts.append("on pace for ~\(forecast.projectedCents.wholeDollarsText) by \(forecast.cycleEnd.dayText)")
+        }
         if let lastUpdated = usage.lastUpdated {
             parts.append("Updated \(lastUpdated.relativeText)")
         }
@@ -101,6 +105,7 @@ struct UsageView: View {
             switch tab {
             case .models: ModelsTab(report: report, isComplete: usage.eventsAreComplete)
             case .days: DaysTab(report: report)
+            case .sessions: SessionsTab(report: report)
             case .team: TeamTab(usage: usage)
             }
         } else if usage.isLoading {
@@ -166,6 +171,61 @@ private struct DaysTab: View {
         }
         .environment(\.locale, .ui)
         .padding()
+    }
+}
+
+private struct SessionsTab: View {
+    private static let shown = 100
+
+    let report: UsageReport
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Table(Array(report.bySession.prefix(Self.shown))) {
+                TableColumn("Started") { session in
+                    Text(session.started?.shortText ?? "—")
+                        .help(session.lastActivity.map { "Last request \($0.longText)" } ?? "")
+                }
+                .width(min: 130, ideal: 150)
+                TableColumn("Main model") { Text($0.mainModel).help($0.mainModel) }
+                TableColumn("Requests") { Text($0.requests, format: .number) }
+                    .width(70)
+                TableColumn("Tokens") { Text($0.tokens.compactText) }
+                    .width(70)
+                TableColumn("Cost") { Text($0.chargedCents.centsText) }
+                    .width(80)
+            }
+            .contextMenu(forSelectionType: UsageReport.SessionUsage.ID.self) { ids in
+                if let id = ids.first {
+                    Button("Copy Conversation ID") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(id, forType: .string)
+                    }
+                }
+            }
+            HStack {
+                Text(summary)
+                Spacer()
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal)
+            .padding(.vertical, 8)
+        }
+    }
+
+    private var summary: String {
+        let sessions = report.bySession
+        let inSessions = sessions.reduce(0) { $0 + $1.chargedCents }
+        var parts = ["\(sessions.count) conversations · \(inSessions.centsText)"]
+        if sessions.count > Self.shown {
+            parts.append("showing the \(Self.shown) most expensive")
+        }
+        let outside = report.chargedCents - inSessions
+        if outside >= 1 {
+            parts.append("\(outside.centsText) outside conversations (Tab, Cmd+K…)")
+        }
+        return parts.joined(separator: " · ")
     }
 }
 

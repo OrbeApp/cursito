@@ -77,6 +77,16 @@ check "skips a repo without upstream" test "$(state_of "$OUTPUT" no-upstream)" =
 check "ignores folders that aren't repos" test -z "$(state_of "$OUTPUT" not-a-repo)"
 check "exits 1 when a repo needs attention" test "$STATUS" = 1
 
+wip_of() { awk -F'\t' -v repo="$2" '$1 == "WIP" && $2 == repo { print $3 }' <<< "$1"; }
+check "counts uncommitted changes" test "$(wip_of "$OUTPUT" dirty)" = 1
+check "a clean repo has no uncommitted changes" test -z "$(wip_of "$OUTPUT" up-to-date)"
+
+echo new > "$REPOS/up-to-date/notes.txt"
+OUTPUT="$(bash "$SCRIPT" -C "$REPOS" -p -f up-to-date)"
+check "an up-to-date repo still reports work in progress" \
+  test "$(state_of "$OUTPUT" up-to-date)/$(wip_of "$OUTPUT" up-to-date)" = OK/1
+rm "$REPOS/up-to-date/notes.txt"
+
 OUTPUT="$(bash "$SCRIPT" -C "$REPOS" -p up-to-date)"
 check "only updates the named repos" test "$(grep -c '^REPO' <<< "$OUTPUT")" = 1
 

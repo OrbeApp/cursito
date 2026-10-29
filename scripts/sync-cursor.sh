@@ -9,6 +9,7 @@
 #   sync-cursor.sh diff          # what an import would change on this Mac
 #   sync-cursor.sh import        # other Mac: apply the export (backs up first)
 #   sync-cursor.sh info          # who exported, when, and with which Cursor
+#   sync-cursor.sh verify        # check the export can be read (and decrypted)
 #
 # Options (before or after the command):
 #   -d PATH   sync location; a .tar.gz/.tgz path is used as an archive
@@ -22,6 +23,15 @@
 # Doesn't sync chats, login or MCP OAuth tokens: they are encrypted with each
 # Mac's keychain, so OAuth MCP servers ask you to log in again after an import.
 #
+# With CURSITO_PASSPHRASE set, export encrypts everything but the MANIFEST
+# (AES-256-CBC, key from PBKDF2-SHA256 with 600,000 iterations). Reading an
+# encrypted export needs the same passphrase; without it, or with a wrong one,
+# the script exits with status 3 (in a terminal it asks for it instead).
+#
+# Exporting to an archive keeps the export it replaces in previous-exports/
+# next to it (last 3), named "<date> <host>.tar.gz"; import one with -d to
+# undo an export.
+#
 # Import refuses to run while Cursor is open and backs up what it replaces in
 # ~/.cursito/backups/<date> (last 5 kept). Restore one with:
 #   sync-cursor.sh import -d ~/.cursito/backups/<date>
@@ -34,10 +44,14 @@ STATE_ROOT="$HOME/.cursito"
 BACKUP_ROOT="$STATE_ROOT/backups"
 LAST_IMPORT_FILE="$STATE_ROOT/last-import"
 BACKUPS_KEPT=5
+EXPORTS_KEPT=3
+PREVIOUS_EXPORTS="previous-exports"
 MANIFEST_FORMAT=1
 SKIP_EXTENSIONS=0
 ASSUME_YES=0
 PORCELAIN=0
+PASSPHRASE_STATUS=3
+CIPHER=(enc -aes-256-cbc -pbkdf2 -iter 600000 -md sha256)
 
 CURSOR_USER="Library/Application Support/Cursor/User"
 STATE_DB="$HOME/$CURSOR_USER/globalStorage/state.vscdb"
@@ -104,6 +118,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 die() { echo "${RED}error:${RESET} $*" >&2; exit 1; }
+die_passphrase() { echo "${RED}error:${RESET} $*" >&2; exit "$PASSPHRASE_STATUS"; }
 
 # Human-only messages; porcelain output carries only ITEM/DETAIL/key=value lines
 say() { [ "$PORCELAIN" -eq 1 ] || echo "$@"; }
@@ -180,6 +195,33 @@ load_export() {
     SRC="$SYNC_PATH"
   fi
   [ -f "$SRC/MANIFEST" ] || die "no export at $SYNC_PATH (run 'export' on the other Mac)"
+  [ "$(manifest_value encrypted)" = 1 ] && decrypt_payload
+  return 0
+}
+
+# Swaps SRC for a directory with the decrypted payload and the MANIFEST
+decrypt_payload() {
+  local plain="$WORK/plain"
+  [ -f "$SRC/payload.enc" ] || die "the encrypted export is incomplete (still syncing?)"
+  if [ -z "${CURSITO_PASSPHRASE:-}" ] && [ -t 0 ] && [ "$PORCELAIN" -eq 0 ]; then
+    read -rsp "Passphrase for this export: " CURSITO_PASSPHRASE; echo >&2
+    export CURSITO_PASSPHRASE
+  fi
+  [ -n "${CURSITO_PASSPHRASE:-}" ] || die_passphrase "this export is encrypted and needs its passphrase"
+  mkdir -p "$plain"
+  openssl "${CIPHER[@]}" -d -pass env:CURSITO_PASSPHRASE -in "$SRC/payload.enc" 2>/dev/null \
+    | tar -xzf - -C "$plain" 2>/dev/null \
+    || die_passphrase "wrong passphrase for this export"
+  cp "$SRC/MANIFEST" "$plain/MANIFEST"
+  SRC="$plain"
+}
+
+# What an export holds besides the MANIFEST
+payload_files() {
+  local name
+  for name in home state-plugins.json extensions.txt; do
+    [ -e "$1/$name" ] && echo "$name"
+  done
 }
 
 manifest_value() { sed -n "s/^$1=//p" "$SRC/MANIFEST" 2>/dev/null; }
@@ -280,6 +322,101 @@ print_dir_diff() {
   [ "$count" -gt 8 ] && detail "$item" "… and $((count - 8)) more"
 }
 
+# Where MCP commands usually live; apps opened from Finder don't get the shell's PATH
+mcp_command_path() {
+  local dirs=("$HOME/.local/bin" "$HOME/.bun/bin" "$HOME/.cargo/bin" "$HOME/.volta/bin"
+    "$HOME/.deno/bin" "$HOME/.local/share/mise/shims" "$HOME/.asdf/shims"
+    /opt/homebrew/bin /usr/local/bin) dir
+  for dir in "$HOME"/.nvm/versions/node/*/bin "$HOME"/.fnm/node-versions/*/installation/bin; do
+    [ -d "$dir" ] && dirs+=("$dir")
+  done
+  local IFS=:
+  echo "${dirs[*]}:$PATH"
+}
+
+# MCP servers in the export that won't start, or will ask for a login, on this Mac
+check_mcp_servers() {
+  local file="$1" servers="$WORK/mcp-servers.tsv" kind name value has_auth total=0 search_path
+  local missing=() logins=() locals=() summary=() note
+  [ -f "$file" ] || return 0
+  # A file, not <(…): bash 3.2 mangles a heredoc inside process substitution
+  python3 - "$file" > "$servers" <<'PY'
+import json, os, shlex, sys
+from urllib.parse import urlparse
+try:
+    with open(sys.argv[1]) as f:
+        servers = json.load(f).get("mcpServers") or {}
+except (ValueError, AttributeError):
+    print("invalid\t-\t-\t0")
+    sys.exit(0)
+for name, server in servers.items():
+    if not isinstance(server, dict):
+        continue
+    name = name.replace("\t", " ")
+    if server.get("command"):
+        # Cursor also accepts the arguments inline: "npx -y package"
+        try:
+            words = shlex.split(server["command"])
+        except ValueError:
+            words = server["command"].split()
+        print(f"command\t{name}\t{words[0] if words else server['command']}\t0")
+        for arg in words[1:] + (server.get("args") or []):
+            if isinstance(arg, str) and arg.startswith(("/", "~/")) and not os.path.exists(os.path.expanduser(arg)):
+                print(f"path\t{name}\t{arg}\t0")
+    elif server.get("url"):
+        host = urlparse(server["url"]).hostname or ""
+        if host in ("localhost", "127.0.0.1", "::1"):
+            print(f"local\t{name}\t{urlparse(server['url']).netloc}\t0")
+            continue
+        headers = set(key.lower() for key in (server.get("headers") or {}))
+        has_auth = int(bool(headers.intersection(["authorization", "x-api-key", "api-key"])))
+        print(f"url\t{name}\t{host}\t{has_auth}")
+PY
+  search_path="$(mcp_command_path)"
+  while IFS=$'\t' read -r kind name value has_auth; do
+    total=$((total + 1))
+    case "$kind" in
+      command)
+        if [[ "$value" == /* || "$value" == "~/"* ]]; then
+          [ -x "${value/#\~/$HOME}" ] || missing+=("$name: $value doesn't exist on this Mac")
+        elif ! PATH="$search_path" command -v "$value" >/dev/null 2>&1; then
+          missing+=("$name: needs '$value', not installed on this Mac")
+        fi ;;
+      path)
+        missing+=("$name: uses $value, which doesn't exist on this Mac") ;;
+      local)
+        locals+=("$name: served by an app at $value, which has to be running") ;;
+      url)
+        [ "$has_auth" = 1 ] || logins+=("$name: $value may ask you to log in (OAuth tokens aren't synced)") ;;
+      invalid)
+        line warn "MCP servers" "mcp.json isn't valid JSON"; return ;;
+    esac
+  done < "$servers"
+  [ "$total" -eq 0 ] && return 0
+
+  [ "${#missing[@]}" -gt 0 ] && summary+=("${#missing[@]} won't start")
+  [ "${#logins[@]}" -gt 0 ] && summary+=("${#logins[@]} may ask you to log in")
+  case "${#locals[@]}" in
+    0) ;;
+    1) summary+=("1 needs its app running") ;;
+    *) summary+=("${#locals[@]} need their app running") ;;
+  esac
+  if [ "${#summary[@]}" -eq 0 ]; then
+    line ok "MCP servers" "all can start on this Mac"
+    return
+  fi
+  local text="${summary[0]}" i
+  for ((i = 1; i < ${#summary[@]}; i++)); do text+=", ${summary[$i]}"; done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    line warn "MCP servers" "$text"
+  else
+    line ok "MCP servers" "$text"
+  fi
+  for note in ${missing[@]+"${missing[@]}"} ${logins[@]+"${logins[@]}"} ${locals[@]+"${locals[@]}"}; do
+    detail "MCP servers" "$note"
+  done
+}
+
 write_manifest() {
   {
     echo "format=$MANIFEST_FORMAT"
@@ -289,6 +426,41 @@ write_manifest() {
     echo "date=$(date '+%Y-%m-%d %H:%M')"
     echo "cursor=$3"
   } > "$1"
+}
+
+# Copies the archive about to be replaced into previous-exports/ (an APFS clone,
+# so no extra space on this Mac) and keeps the last $EXPORTS_KEPT
+keep_previous_export() {
+  local dir manifest epoch host name entry entries=() i
+  [ -f "$SYNC_PATH" ] || return 0
+  dir="$(dirname "$SYNC_PATH")/$PREVIOUS_EXPORTS"
+  if ! mkdir -p "$dir"; then
+    line warn "previous export" "can't create $dir"
+    return 0
+  fi
+  chmod 700 "$dir"
+
+  manifest="$(tar -xzOf "$SYNC_PATH" MANIFEST 2>/dev/null)"
+  epoch="$(printf '%s\n' "$manifest" | sed -n 's/^epoch=//p')"
+  host="$(printf '%s\n' "$manifest" | sed -n 's/^host=//p' | tr -d '/:')"
+  case "$epoch" in ''|*[!0-9]*) epoch="$(stat -f %m "$SYNC_PATH")" ;; esac
+  name="$(date -r "$epoch" +%Y%m%d-%H%M%S) ${host:-unknown}.tar.gz"
+  if cp -c "$SYNC_PATH" "$dir/$name" 2>/dev/null || cp -p "$SYNC_PATH" "$dir/$name"; then
+    chmod 600 "$dir/$name"
+    line ok "previous export" "kept in $PREVIOUS_EXPORTS/"
+  else
+    line warn "previous export" "couldn't keep a copy"
+  fi
+
+  # Names start with the date, so the glob lists them oldest first
+  for entry in "$dir"/2*.tar.gz; do
+    [ -f "$entry" ] && entries+=("$entry")
+  done
+  i=0
+  while [ $((${#entries[@]} - i)) -gt "$EXPORTS_KEPT" ]; do
+    rm -f "${entries[$i]}"
+    i=$((i + 1))
+  done
 }
 
 prune_backups() {
@@ -363,14 +535,27 @@ cmd_export() {
 
   write_manifest "$out/MANIFEST" "" "$version"
 
+  if [ -n "${CURSITO_PASSPHRASE:-}" ]; then
+    # shellcheck disable=SC2046 # payload_files prints names without spaces
+    (cd "$out" && COPYFILE_DISABLE=1 tar -czf - $(payload_files .) 2>/dev/null) \
+      | openssl "${CIPHER[@]}" -salt -pass env:CURSITO_PASSPHRASE -out "$out/payload.enc" \
+      || die "can't encrypt the export"
+    # shellcheck disable=SC2046
+    (cd "$out" && rm -rf $(payload_files .))
+    echo "encrypted=1" >> "$out/MANIFEST"
+    line ok "encryption" "AES-256, with your passphrase"
+  fi
+
   if is_archive; then
     mkdir -p "$(dirname "$SYNC_PATH")" || die "can't create $(dirname "$SYNC_PATH")"
     archive_tmp="$WORK/export.tar.gz"
     # MANIFEST first so `info` stops reading early; no AppleDouble ._ files
-    (cd "$out" && COPYFILE_DISABLE=1 tar -czf "$archive_tmp" MANIFEST home \
-      state-plugins.json $([ -f extensions.txt ] && echo extensions.txt) 2>/dev/null) \
+    # shellcheck disable=SC2046
+    (cd "$out" && COPYFILE_DISABLE=1 tar -czf "$archive_tmp" MANIFEST \
+      $(payload_files .) $([ -f payload.enc ] && echo payload.enc) 2>/dev/null) \
       || die "can't create the archive"
     chmod 600 "$archive_tmp"
+    keep_previous_export
     mv -f "$archive_tmp" "$SYNC_PATH" || die "can't write $SYNC_PATH"
   else
     rm -rf "$SYNC_PATH"
@@ -380,7 +565,15 @@ cmd_export() {
 
   say
   say "${GREEN}Export ready.${RESET} On the other Mac: ${BOLD}sync-cursor.sh import${RESET}"
-  say "${YELLOW}Heads up:${RESET} mcp.json may hold plain-text tokens; don't commit $SYNC_PATH anywhere."
+  if [ -z "${CURSITO_PASSPHRASE:-}" ]; then
+    say "${YELLOW}Heads up:${RESET} mcp.json may hold plain-text tokens; don't commit $SYNC_PATH anywhere."
+  fi
+}
+
+# ------------------------------------------------------------ verify
+cmd_verify() {
+  load_export
+  say "${GREEN}The export can be read.${RESET}"
 }
 
 # ------------------------------------------------------------ info
@@ -479,6 +672,8 @@ cmd_diff() {
       for id in "${missing[@]}"; do detail "extensions" "$id"; done
     fi
   fi
+
+  check_mcp_servers "$SRC/home/.cursor/mcp.json"
 }
 
 # ------------------------------------------------------------ import
@@ -592,6 +787,7 @@ case "$COMMAND" in
   diff)   cmd_diff ;;
   import) cmd_import ;;
   info)   cmd_info ;;
+  verify) cmd_verify ;;
   "")     usage 1 ;;
   *)      echo "Unknown command: $COMMAND" >&2; usage 1 ;;
 esac

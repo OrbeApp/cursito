@@ -9,6 +9,8 @@ public struct ExportInfo: Equatable, Sendable {
     public let thisMachineID: String
     /// Export timestamp of the last export imported on this Mac, if any.
     public let lastImportedExportAt: Date?
+    /// Reading it needs the passphrase it was exported with.
+    public let isEncrypted: Bool
 
     public var isFromThisMac: Bool { machineID == thisMachineID }
 
@@ -36,5 +38,6 @@ public struct ExportInfo: Equatable, Sendable {
         self.cursorVersion = values["cursor"] ?? ""
         self.thisMachineID = thisMachineID
         self.lastImportedExportAt = lastImport > 0 ? Date(timeIntervalSince1970: lastImport) : nil
+        self.isEncrypted = values["encrypted"] == "1"
     }
 }

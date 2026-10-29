@@ -82,6 +82,25 @@ struct PorcelainTests {
         #expect(repos[2].state == .error)
     }
 
+    @Test func workLeftBehindCoversWhatOnlyLivesOnThisMac() {
+        let output = """
+        REPO\tOK\tapi\tmain up to date
+        WIP\tapi\t3
+        REPO\tAHEAD\tweb\tmain has 2 unpushed commit(s)
+        REPO\tBEHIND\tdocs\tmain is 1 commit(s) behind (fetch only)
+        REPO\tSKIP\tlab\tspike has no upstream branch
+        WIP\tlab\t1
+        """
+        let repos = Porcelain.repos(in: output)
+
+        #expect(repos.map(\.workLeftBehind) == [
+            "3 uncommitted changes",
+            "main has 2 unpushed commit(s)",
+            nil,
+            "1 uncommitted change · spike has no upstream branch",
+        ])
+    }
+
     @Test func errorMessagePrefersTheScriptErrorLine() {
         let output = "Export from Mac Studio\n\nerror: Cursor is open. Quit it.\n"
         #expect(Porcelain.errorMessage(in: output) == "Cursor is open. Quit it.")

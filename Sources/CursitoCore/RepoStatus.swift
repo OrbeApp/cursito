@@ -22,20 +22,37 @@ public struct RepoStatus: Identifiable, Equatable, Sendable {
     public let name: String
     public let detail: String
     public var log: [String]
+    /// Modified and untracked files, whatever the state.
+    public var uncommittedChanges: Int
 
     public var id: String { name }
 
-    public init(state: State, name: String, detail: String, log: [String] = []) {
+    public init(state: State, name: String, detail: String, log: [String] = [], uncommittedChanges: Int = 0) {
         self.state = state
         self.name = name
         self.detail = detail
         self.log = log
+        self.uncommittedChanges = uncommittedChanges
+    }
+
+    /// Work that only exists on this Mac, for "Heading Out"; nil when the repo is safe to leave.
+    public var workLeftBehind: String? {
+        var parts: [String] = []
+        if uncommittedChanges > 0 {
+            parts.append("\(uncommittedChanges) uncommitted change\(uncommittedChanges == 1 ? "" : "s")")
+        }
+        switch state {
+        case .ahead, .diverged, .skip: parts.append(detail)
+        case .error: parts.append("couldn't check: \(detail)")
+        case .ok, .pulled, .behind, .dirty: break
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 
 extension Porcelain {
     /// `REPO<TAB>state<TAB>name<TAB>detail` lines, with the `LOG<TAB>name<TAB>text`
-    /// lines that follow them attached to their repo.
+    /// and `WIP<TAB>name<TAB>count` lines that follow them attached to their repo.
     public static func repos(in output: String) -> [RepoStatus] {
         var repos: [RepoStatus] = []
         for line in output.split(separator: "\n") {
@@ -51,6 +68,10 @@ extension Porcelain {
             case "LOG":
                 if let index = repos.lastIndex(where: { $0.name == fields[1] }) {
                     repos[index].log.append(fields[2...].joined(separator: "\t"))
+                }
+            case "WIP":
+                if let index = repos.lastIndex(where: { $0.name == fields[1] }) {
+                    repos[index].uncommittedChanges = Int(fields[2]) ?? 0
                 }
             default:
                 continue
