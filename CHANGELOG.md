@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-29
+
+### Added
+
+- The menu and the menu bar icon show what changed on this Mac since its last
+  export or import, and an import warns before replacing those changes.
+  `sync-cursor.sh status` prints the same from the command line.
+- **Fetch in the Background…** fetches every repo every 15 minutes, 30 minutes
+  or hour and sends a notification when one gets new commits.
+- Pushing a `vX.Y.Z` tag publishes the GitHub release with `Cursito.zip` and
+  the version's CHANGELOG notes.
+- README badges, a screenshot and download instructions.
+
 ## [1.0.0] - 2026-10-29
 
 First release.
@@ -71,5 +84,6 @@ First release.
 - Unit tests plus end-to-end test scripts for sync and repo updates, and a CI
   workflow.
 
-[Unreleased]: https://github.com/OrbeApp/cursito/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/OrbeApp/cursito/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/OrbeApp/cursito/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/OrbeApp/cursito/releases/tag/v1.0.0

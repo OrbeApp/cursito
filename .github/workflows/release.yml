@@ -1,0 +1,51 @@
+name: Release
+
+# Pushing a vX.Y.Z tag builds Cursito.zip and publishes the GitHub release the
+# in-app update check looks for, with the notes from CHANGELOG.md.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches the app version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          bundled="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Resources/Info.plist)"
+          if [ "$version" != "$bundled" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match CFBundleShortVersionString $bundled in Resources/Info.plist"
+            exit 1
+          fi
+          scripts/release-notes.sh "$version" > "$RUNNER_TEMP/notes.md"
+
+      - name: Swift tests
+        run: swift test
+
+      - name: Export/import end to end
+        run: scripts/test-sync.sh
+
+      - name: Repo updates end to end
+        run: scripts/test-update-repos.sh
+
+      - name: Build Cursito.zip
+        run: scripts/build-app.sh --zip
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" build/Cursito.zip --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" build/Cursito.zip \
+              --title "Cursito ${GITHUB_REF_NAME#v}" \
+              --notes-file "$RUNNER_TEMP/notes.md" \
+              --verify-tag
+          fi

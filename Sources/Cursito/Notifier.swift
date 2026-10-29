@@ -8,6 +8,7 @@ enum Notifier {
         case usageForecast = "cursor-usage-forecast"
         case newExport = "cursor-new-export"
         case syncResult = "cursor-sync-result"
+        case reposBehind = "repos-behind"
     }
 
     private static let settingsURL = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!

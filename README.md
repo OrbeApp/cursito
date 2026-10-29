@@ -1,4 +1,19 @@
-# Cursito
+<h1 align="center">Cursito</h1>
+
+<p align="center">
+  <a href="#install"><img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+"></a>
+  <a href="Package.swift"><img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6"></a>
+  <a href="https://github.com/OrbeApp/cursito/releases/latest"><img src="https://img.shields.io/github/v/release/OrbeApp/cursito" alt="Latest release"></a>
+  <a href="https://github.com/OrbeApp/cursito/actions/workflows/ci.yml"><img src="https://github.com/OrbeApp/cursito/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/OrbeApp/cursito" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+    <img src="docs/screenshot-light.png" width="368" alt="Cursito's menu: the Cursor setup from the other Mac waiting to be imported, this cycle's spend against a budget, and git repos with new commits">
+  </picture>
+</p>
 
 Cursor has no built-in settings sync. Cursito is a small macOS menu bar app that
 copies your Cursor setup from one Mac to another through iCloud Drive (or any
@@ -15,9 +30,15 @@ folder both Macs can see).
   sync folder), so overwriting an export by mistake isn't final either.
 - While it exports or imports, the menu bar icon turns into an up or down
   arrow, and a notification tells you when it's done if the menu is closed.
+- When you change settings, rules, skills, MCP servers, plugins or extensions
+  after this Mac's last export or import, the menu says what changed
+  ("Changed here: settings.json, .codex/skills/") and the icon gets a circle,
+  so a change doesn't stay behind on one Mac.
 
 Sync goes one way: the Mac that exports last is the source of truth. Cursito
-warns you before overwriting an export the other Mac hasn't imported yet.
+warns you before overwriting an export the other Mac hasn't imported yet, and
+before an import replaces changes this Mac hasn't exported. With both at once,
+the icon shows an exclamation mark.
 
 **Heading Out** and **Just Arrived** do the whole switch in one click.
 Heading Out fetches your repos, exports this Mac and lists the work that only
@@ -37,7 +58,9 @@ folder that holds your repos and **Pull All** fetches every repo and
 fast-forwards the ones that are behind. It never merges or rebases; repos with
 uncommitted changes or diverged branches are listed for you to sort out
 (right-click one to open it in Finder, Terminal or Cursor). **Fetch Only**
-just updates the remote branches.
+just updates the remote branches. **Fetch in the Background…** does that every
+15 minutes, 30 minutes or hour, and sends a notification when a repo gets new
+commits on its remote (once per repo until you pull it).
 
 ## What gets synced
 
@@ -69,8 +92,16 @@ folders (Homebrew, nvm, bun, cargo, `~/.local/bin`…), not in your shell's
 
 ## Install
 
-Requires macOS 14 or later and Xcode (or the Command Line Tools with Swift 6).
-Build from source on each Mac:
+Requires macOS 14 or later, on each Mac.
+
+**Download:** get `Cursito.zip` from the
+[latest release](https://github.com/OrbeApp/cursito/releases/latest), unzip it
+and move `Cursito.app` to `/Applications`. The build isn't notarized yet, so
+the first time right-click the app and choose **Open** (or run
+`xattr -dr com.apple.quarantine /Applications/Cursito.app`).
+
+**Build from source** with Xcode or the Command Line Tools (Swift 6), which
+avoids that warning:
 
 ```bash
 git clone https://github.com/OrbeApp/cursito.git
@@ -147,6 +178,7 @@ scripts/sync-cursor.sh diff   -d "$SYNC"   # what an import would change
 scripts/sync-cursor.sh import -d "$SYNC"   # other Mac, with Cursor closed
 scripts/sync-cursor.sh import -d ~/.cursito/backups/20261029-105854   # restore a backup
 scripts/sync-cursor.sh verify -d "$SYNC"   # can this Mac read (and decrypt) the export?
+scripts/sync-cursor.sh status              # what changed here since this Mac's last export or import
 ```
 
 Run `scripts/sync-cursor.sh -h` for every option. A `-d` path ending in
@@ -202,6 +234,11 @@ from the other Mac with a new one.
 - Import keeps the importing Mac's login session in `cli-config.json`, only
   touches the `cursor.plugins.installedIds.*` keys in `state.vscdb`, and records
   the import in `~/.cursito/last-import`.
+- After an export or an import, the script saves a SHA-256 of each synced item
+  in `~/.cursito/last-sync` (the login session left out, extensions by id).
+  `status` compares this Mac against it; it only reads local files, so Cursito
+  runs it every couple of minutes. Changes are tracked from the first export or
+  import with this version on.
 
 Cursito relies on how Cursor stores its setup today, which isn't a public API.
 If a Cursor update moves things around, an import may miss something; the
@@ -223,9 +260,15 @@ Cursor setup.
 
 The update check compares `CFBundleShortVersionString` in
 `Resources/Info.plist` with the tag of the latest published GitHub release
-(drafts and prereleases don't count). To release, bump the version in
-`Info.plist` and `CHANGELOG.md`, tag `vX.Y.Z`, and publish a GitHub release
-for that tag with `build/Cursito.zip` from `scripts/build-app.sh --zip`.
+(drafts and prereleases don't count). To release:
+
+1. On `develop`, bump `CFBundleShortVersionString` in `Info.plist` and turn
+   `## [Unreleased]` in `CHANGELOG.md` into `## [X.Y.Z] - YYYY-MM-DD`.
+2. Merge `develop` into `main` with a merge commit, tag the merge `vX.Y.Z` and
+   push the tag.
+3. The Release workflow checks the tag matches `Info.plist`, runs the tests,
+   builds `Cursito.zip` and publishes the release with that version's
+   CHANGELOG section (`scripts/release-notes.sh X.Y.Z` prints it locally).
 
 ### Signed releases
 
