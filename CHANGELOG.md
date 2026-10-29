@@ -43,6 +43,8 @@ First release.
 - Configurable sync folder (default `iCloud Drive/Cursito`) and **Open at Login**.
 - **About** in the menu footer, with the version, a link to the repository
   and the note that Cursito isn't affiliated with Cursor.
+- Checks GitHub releases at launch and once a day, and shows **Update to
+  X.Y.Z** next to the title when a newer version is published.
 - `scripts/sync-cursor.sh` command line with `export`, `info`, `diff` and
   `import`.
 - `scripts/update-repos.sh` command line for fetching and fast-forwarding repos.

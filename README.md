@@ -63,6 +63,11 @@ Open Cursito from `/Applications`. The first time it touches iCloud Drive,
 macOS asks for permission. Turn on **Open at Login** in the menu so it's always
 there.
 
+Cursito checks [GitHub releases](https://github.com/OrbeApp/cursito/releases)
+at launch and once a day. When there's a newer one, **Update to X.Y.Z**
+appears next to the title and opens the release page. To update a build from
+source, `git pull` and run `scripts/build-app.sh --install` again.
+
 The default sync folder is `iCloud Drive/Cursito`. Use **Change…** in the menu
 to pick another one; both Macs need to point at the same folder.
 
@@ -165,6 +170,14 @@ scripts/test-update-repos.sh   # update-repos.sh against throwaway git repos
 
 `scripts/test-sync.sh` stubs `ps` and `cursor`, so it never touches your real
 Cursor setup.
+
+### Releases
+
+The update check compares `CFBundleShortVersionString` in
+`Resources/Info.plist` with the tag of the latest published GitHub release
+(drafts and prereleases don't count). To release, bump the version in
+`Info.plist` and `CHANGELOG.md`, tag `vX.Y.Z`, and publish a GitHub release
+for that tag with `build/Cursito.zip` from `scripts/build-app.sh --zip`.
 
 ### Signed releases
 

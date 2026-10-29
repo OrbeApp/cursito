@@ -5,10 +5,11 @@ struct CursitoApp: App {
     @State private var model = SyncModel()
     @State private var repos = ReposModel()
     @State private var usage = UsageModel()
+    @State private var updates = UpdateChecker()
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(model: model, usage: usage, repos: repos)
+            MenuContent(model: model, usage: usage, repos: repos, updates: updates)
         } label: {
             MenuBarLabel(sync: model, usage: usage)
         }

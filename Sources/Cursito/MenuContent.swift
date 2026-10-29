@@ -5,12 +5,26 @@ struct MenuContent: View {
     let model: SyncModel
     let usage: UsageModel
     let repos: ReposModel
+    let updates: UpdateChecker
     @Environment(\.openWindow) private var openWindow
     @AppStorage(MenuBarLabel.showsSpendKey) private var showsSpendInMenuBar = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Cursito").font(.headline)
+            HStack(alignment: .firstTextBaseline) {
+                Text("Cursito").font(.headline)
+                Spacer()
+                if let release = updates.available {
+                    Button {
+                        updates.openReleasePage()
+                    } label: {
+                        Label("Update to \(release.version.description)", systemImage: "arrow.down.circle.fill")
+                    }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    .help("Open the release page on GitHub")
+                }
+            }
             Divider()
             cursorSection
             Divider()
