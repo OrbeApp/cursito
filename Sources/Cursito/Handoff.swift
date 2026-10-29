@@ -12,10 +12,12 @@ final class Handoff {
 
     private let sync: SyncModel
     private let repos: ReposModel
+    private let cloudAgents: CloudAgentsModel
 
-    init(sync: SyncModel, repos: ReposModel) {
+    init(sync: SyncModel, repos: ReposModel, cloudAgents: CloudAgentsModel) {
         self.sync = sync
         self.repos = repos
+        self.cloudAgents = cloudAgents
     }
 
     /// Fetches the repos, exports this Mac and lists the work that only lives here.
@@ -36,16 +38,33 @@ final class Handoff {
 
         var message = sync.encryptsExports ? "Cursor setup exported, encrypted." : "Cursor setup exported."
         let leftovers = repos.repos.compactMap { repo in repo.workLeftBehind.map { "\(repo.name): \($0)" } }
+        let title: String
         if repos.folder == nil {
-            show("Ready to go", message)
+            title = "Ready to go"
         } else if let problem = repos.problem {
-            show("Before you go…", message + "\n\nCouldn't check the git repos: \(problem)")
+            title = "Before you go…"
+            message += "\n\nCouldn't check the git repos: \(problem)"
         } else if leftovers.isEmpty {
-            show("Ready to go", message + " Every repo in \(repos.folderDisplay) is committed and pushed.")
+            title = "Ready to go"
+            message += " Every repo in \(repos.folderDisplay) is committed and pushed."
         } else {
+            title = "Before you go…"
             message += "\n\nThis work only lives on this Mac:\n" + Self.bulletList(leftovers)
-            show("Before you go…", message)
         }
+        if let running = await runningCloudAgents() {
+            message += "\n\n" + running
+        }
+        show(title, message)
+    }
+
+    /// "2 cloud agents still running: Fix login and Add README." They keep going without this Mac.
+    private func runningCloudAgents() async -> String? {
+        guard cloudAgents.isConnected else { return nil }
+        await cloudAgents.refreshIfStale()
+        let titles = cloudAgents.running.map(\.title)
+        guard !titles.isEmpty else { return nil }
+        let count = titles.count == 1 ? "1 cloud agent" : "\(titles.count) cloud agents"
+        return "\(count) still running: \(titles.shortListText)."
     }
 
     /// Imports the other Mac's setup if there's a new one, then pulls every repo.

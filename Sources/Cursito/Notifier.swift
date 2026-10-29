@@ -1,7 +1,7 @@
 import AppKit
 import UserNotifications
 
-/// macOS notifications: spend warnings, new exports from the other Mac and sync results.
+/// macOS notifications: spend warnings, new exports from the other Mac, sync results and cloud agent runs.
 enum Notifier {
     enum Kind: String {
         case usageLimit = "cursor-usage-limit"
@@ -9,6 +9,7 @@ enum Notifier {
         case newExport = "cursor-new-export"
         case syncResult = "cursor-sync-result"
         case reposBehind = "repos-behind"
+        case cloudAgentRun = "cursor-cloud-agent-run"
     }
 
     private static let settingsURL = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!

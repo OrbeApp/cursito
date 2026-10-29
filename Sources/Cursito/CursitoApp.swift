@@ -5,20 +5,30 @@ struct CursitoApp: App {
     @State private var model: SyncModel
     @State private var repos: ReposModel
     @State private var handoff: Handoff
+    @State private var cloudAgents: CloudAgentsModel
     @State private var usage = UsageModel()
     @State private var updates = UpdateChecker()
 
     init() {
         let model = SyncModel()
         let repos = ReposModel()
+        let cloudAgents = CloudAgentsModel()
         _model = State(initialValue: model)
         _repos = State(initialValue: repos)
-        _handoff = State(initialValue: Handoff(sync: model, repos: repos))
+        _cloudAgents = State(initialValue: cloudAgents)
+        _handoff = State(initialValue: Handoff(sync: model, repos: repos, cloudAgents: cloudAgents))
     }
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContent(model: model, usage: usage, repos: repos, handoff: handoff, updates: updates)
+            MenuContent(
+                model: model,
+                usage: usage,
+                cloudAgents: cloudAgents,
+                repos: repos,
+                handoff: handoff,
+                updates: updates
+            )
         } label: {
             MenuBarLabel(sync: model, usage: usage)
         }
@@ -43,6 +53,11 @@ struct CursitoApp: App {
             ReposView(repos: repos)
         }
         .defaultSize(width: 600, height: 480)
+
+        Window("Cloud Agents", id: WindowID.cloudAgents) {
+            CloudAgentsView(cloudAgents: cloudAgents)
+        }
+        .windowResizability(.contentSize)
     }
 }
 
@@ -51,6 +66,7 @@ enum WindowID {
     static let log = "log"
     static let usage = "usage"
     static let repos = "repos"
+    static let cloudAgents = "cloud-agents"
 }
 
 extension Locale {
@@ -69,6 +85,11 @@ extension Date {
 
     var relativeText: String {
         formatted(Date.RelativeFormatStyle(presentation: .named).locale(.ui))
+    }
+
+    /// "2 hr. ago"
+    var shortRelativeText: String {
+        formatted(Date.RelativeFormatStyle(presentation: .named, unitsStyle: .abbreviated).locale(.ui))
     }
 
     /// "Oct 1"
@@ -93,6 +114,15 @@ extension Int {
     /// "1.2M"
     var compactText: String {
         formatted(.number.notation(.compactName).locale(.ui))
+    }
+}
+
+extension [String] {
+    /// "A, B and C", or "A, B and 3 more" past three.
+    var shortListText: String {
+        count <= 3
+            ? formatted(.list(type: .and).locale(Locale(identifier: "en_US")))
+            : prefix(2).joined(separator: ", ") + " and \(count - 2) more"
     }
 }
 

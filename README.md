@@ -53,6 +53,10 @@ Cursor's
 [Admin API](https://cursor.com/docs/account/teams/admin-api), so it needs an
 Enterprise team and an admin key (see [Cursor Usage](#cursor-usage)).
 
+**Cloud Agents** lists your running and recently finished Cursor cloud
+agents and sends a notification when one finishes or fails. It needs a user
+API key (see [Cloud Agents](#cloud-agents)).
+
 As an extra, **Git Repos** keeps the code itself in step: point it at the
 folder that holds your repos and **Pull All** fetches every repo and
 fast-forwards the ones that are behind. It never merges or rebases; repos with
@@ -164,6 +168,31 @@ The Admin API is Cursor's only documented way to read usage. Apps that read
 the session of the Cursor app itself stopped working when Cursor started
 encrypting it with the keychain, and Cursito doesn't try to get around that.
 
+## Cloud Agents
+
+1. In the [Cursor dashboard](https://cursor.com/dashboard), create a user
+   API key (Integrations › API Keys). The Admin API key from Cursor Usage
+   doesn't work here.
+2. In Cursito, **Connect Cursor API Key…** and paste it.
+
+The menu then shows the agents running now (up to three) and the ones that
+ended in the last 24 hours, with the repo, the branch they pushed and how they
+ended. Click one to open it in Cursor, or its pull request once it's done.
+With **Notify When an Agent Finishes** (on by default, in the `…` menu),
+Cursito sends a notification when a run finishes or fails, with the repo,
+branch and PR. **Heading Out** also mentions the agents still running.
+
+Cursito checks the key with `GET /v1/me` and keeps it in your login keychain.
+The key could launch agents, which costs money, but Cursito's client only
+sends GET requests to `/v1/me`, `/v1/agents`, `/v1/agents/{id}` and
+`/v1/agents/{id}/runs/{runId}`: it can't start, follow up, stop or delete an
+agent. It refreshes every minute while an agent runs, every 5 minutes
+otherwise and when you open the menu, and waits as long as Cursor asks when
+it rate limits. **API Key…** in the same menu replaces or disconnects it.
+
+The [Cloud Agents API](https://cursor.com/docs/cloud-agent/api/endpoints) is
+in public beta, so it may change under Cursito.
+
 ## Command line
 
 The app is a thin UI over [`scripts/sync-cursor.sh`](scripts/sync-cursor.sh),
@@ -248,7 +277,7 @@ backup lets you roll back.
 
 ```bash
 swift run Cursito          # run the app from the checkout (uses scripts/sync-cursor.sh)
-swift test                 # parsing, import-state rules and the usage client
+swift test                 # parsing, import-state rules, the usage and cloud agents clients
 scripts/test-sync.sh       # end-to-end export/import (plain and encrypted) between two fake home folders
 scripts/test-update-repos.sh   # update-repos.sh against throwaway git repos
 ```
