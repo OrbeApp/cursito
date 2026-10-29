@@ -459,6 +459,7 @@ struct MenuContent: View {
                     change: repos.chooseFolder,
                     isDisabled: repos.isRunning
                 )
+                autoFetchMenu
             } else {
                 Text("Pull every git repo in a folder at once. Never merges or rebases.")
                     .font(.caption)
@@ -473,6 +474,37 @@ struct MenuContent: View {
                 .controlSize(.large)
             }
         }
+    }
+
+    private var autoFetchMenu: some View {
+        let minutes = repos.autoFetchMinutes
+        return Menu {
+            Picker("Fetch in the background", selection: Binding(
+                get: { repos.autoFetchMinutes },
+                set: { repos.autoFetchMinutes = $0 }
+            )) {
+                ForEach(ReposModel.autoFetchChoices, id: \.self) { choice in
+                    Text("Every \(ReposModel.intervalText(minutes: choice))").tag(choice)
+                }
+                Text("Never").tag(0)
+            }
+            .pickerStyle(.inline)
+            Toggle("Notify About New Commits", isOn: Binding(
+                get: { repos.notifiesWhenBehind },
+                set: { isOn in Task { await repos.setNotifiesWhenBehind(isOn) } }
+            ))
+            .disabled(minutes == 0)
+        } label: {
+            Label(
+                minutes == 0 ? "Fetch in the Background…" : "Fetching every \(ReposModel.intervalText(minutes: minutes))",
+                systemImage: "clock.arrow.circlepath"
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .controlSize(.small)
+        .fixedSize()
+        .font(.caption)
+        .help("Fetch every repo now and then, without touching working trees, and tell you when one has new commits")
     }
 
     private func folderRow(

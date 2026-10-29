@@ -43,7 +43,9 @@ folder that holds your repos and **Pull All** fetches every repo and
 fast-forwards the ones that are behind. It never merges or rebases; repos with
 uncommitted changes or diverged branches are listed for you to sort out
 (right-click one to open it in Finder, Terminal or Cursor). **Fetch Only**
-just updates the remote branches.
+just updates the remote branches. **Fetch in the Background…** does that every
+15 minutes, 30 minutes or hour, and sends a notification when a repo gets new
+commits on its remote (once per repo until you pull it).
 
 ## What gets synced
 
