@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The menu and the menu bar icon show what changed on this Mac since its last
+  export or import, and an import warns before replacing those changes.
+  `sync-cursor.sh status` prints the same from the command line.
+
 ## [1.0.0] - 2026-10-29
 
 First release.

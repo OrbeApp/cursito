@@ -172,6 +172,13 @@ struct MenuContent: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            if let changes = model.localChanges, !changes.isEmpty {
+                Label("Changed here: \(changes.summary())", systemImage: "pencil.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(localChangesHelp(changes))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
@@ -517,6 +524,15 @@ struct MenuContent: View {
             parts.append("encrypted")
         }
         return parts.joined(separator: " · ")
+    }
+
+    private func localChangesHelp(_ changes: LocalChanges) -> String {
+        var text = "Changed since this Mac's last \(changes.lastSync.rawValue) (\(changes.lastSyncAt.shortText)): "
+            + changes.summary(listing: .max) + ". Export to take them to the other Mac."
+        if model.info?.isPendingImport == true {
+            text += " The other Mac's export is waiting too: importing it replaces these changes, exporting replaces it."
+        }
+        return text
     }
 
     private func show(_ id: String) {

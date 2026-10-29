@@ -41,6 +41,28 @@ struct ExportInfoTests {
     }
 }
 
+struct LocalChangesTests {
+    @Test func noSnapshotYieldsNil() {
+        #expect(LocalChanges(porcelain: "last_sync=none") == nil)
+    }
+
+    @Test func summarizesChangedItemsWithShortNames() throws {
+        let output = """
+        last_sync=import
+        last_sync_epoch=2000
+        ITEM\tchanged\tLibrary/Application Support/Cursor/User/settings.json\tchanged
+        ITEM\tnew\t.cursor/hooks.json\tnew on this Mac
+        ITEM\tchanged\t.codex/skills/\tchanged
+        """
+        let changes = try #require(LocalChanges(porcelain: output))
+
+        #expect(changes.lastSync == .import)
+        #expect(changes.lastSyncAt == Date(timeIntervalSince1970: 2_000))
+        #expect(changes.summary() == "settings.json, .cursor/hooks.json and 1 more")
+        #expect(changes.summary(listing: 3) == "settings.json, .cursor/hooks.json, and .codex/skills/")
+    }
+}
+
 struct PorcelainTests {
     @Test func attachesDetailsToTheirItem() {
         let output = """

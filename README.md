@@ -15,9 +15,15 @@ folder both Macs can see).
   sync folder), so overwriting an export by mistake isn't final either.
 - While it exports or imports, the menu bar icon turns into an up or down
   arrow, and a notification tells you when it's done if the menu is closed.
+- When you change settings, rules, skills, MCP servers, plugins or extensions
+  after this Mac's last export or import, the menu says what changed
+  ("Changed here: settings.json, .codex/skills/") and the icon gets a circle,
+  so a change doesn't stay behind on one Mac.
 
 Sync goes one way: the Mac that exports last is the source of truth. Cursito
-warns you before overwriting an export the other Mac hasn't imported yet.
+warns you before overwriting an export the other Mac hasn't imported yet, and
+before an import replaces changes this Mac hasn't exported. With both at once,
+the icon shows an exclamation mark.
 
 **Heading Out** and **Just Arrived** do the whole switch in one click.
 Heading Out fetches your repos, exports this Mac and lists the work that only
@@ -147,6 +153,7 @@ scripts/sync-cursor.sh diff   -d "$SYNC"   # what an import would change
 scripts/sync-cursor.sh import -d "$SYNC"   # other Mac, with Cursor closed
 scripts/sync-cursor.sh import -d ~/.cursito/backups/20261029-105854   # restore a backup
 scripts/sync-cursor.sh verify -d "$SYNC"   # can this Mac read (and decrypt) the export?
+scripts/sync-cursor.sh status              # what changed here since this Mac's last export or import
 ```
 
 Run `scripts/sync-cursor.sh -h` for every option. A `-d` path ending in
@@ -202,6 +209,11 @@ from the other Mac with a new one.
 - Import keeps the importing Mac's login session in `cli-config.json`, only
   touches the `cursor.plugins.installedIds.*` keys in `state.vscdb`, and records
   the import in `~/.cursito/last-import`.
+- After an export or an import, the script saves a SHA-256 of each synced item
+  in `~/.cursito/last-sync` (the login session left out, extensions by id).
+  `status` compares this Mac against it; it only reads local files, so Cursito
+  runs it every couple of minutes. Changes are tracked from the first export or
+  import with this version on.
 
 Cursito relies on how Cursor stores its setup today, which isn't a public API.
 If a Cursor update moves things around, an import may miss something; the

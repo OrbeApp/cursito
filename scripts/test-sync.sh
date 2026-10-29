@@ -169,6 +169,38 @@ check "an encrypted export imports" cmp "$A_USER/settings.json" "$B_USER/setting
 check "an encrypted import records the export" \
   test "$(cat "$B/.cursito/last-import")" = "$(tar -xzOf "$SECRET" MANIFEST | sed -n 's/^epoch=//p')"
 
+# ------------------------------------------------------------ status
+C="$WORK/mac-c"; make_home "$C"
+status_of() { HOME="$1" bash "$SCRIPT" status -p -d "$ARCHIVE"; }
+check "status before any sync says so" grep -qx 'last_sync=none' <<< "$(status_of "$C")"
+check "status after an import has no changes" \
+  bash -c '[ "$(grep -c "^ITEM" <<< "$1")" = 0 ] && grep -qx last_sync=import <<< "$1"' _ "$(status_of "$B")"
+check "status after an export has no changes" \
+  bash -c '[ "$(grep -c "^ITEM" <<< "$1")" = 0 ] && grep -qx last_sync=export <<< "$1"' _ "$(status_of "$A")"
+
+touch "$A_USER/settings.json"
+cat "$A_USER/settings.json" > "$WORK/settings.json" && cat "$WORK/settings.json" > "$A_USER/settings.json"
+check "rewriting a file without changes isn't a change" \
+  bash -c '! grep -q "^ITEM" <<< "$1"' _ "$(status_of "$A")"
+echo '{"editor.fontSize": 18}' > "$A_USER/settings.json"
+echo new > "$A/.codex/skills/mine/NOTES.md"
+echo '{"hooks": {}}' > "$A/.cursor/hooks.json"
+echo "baz.qux@2.0.0" >> "$A/.fake-extensions"
+sqlite3 "$A_USER/globalStorage/state.vscdb" "UPDATE ItemTable SET value = '[]' WHERE key = '$PLUGINS_KEY'"
+echo '{"authInfo":{"email":"other@example.com"},"model":"from-a"}' > "$A/.cursor/cli-config.json"
+STATUS="$(status_of "$A")"
+has_status() { grep -q "^ITEM"$'\t'"$1"$'\t'"$2"$'\t'"$3" <<< "$STATUS"; }
+check "status reports a changed file" has_status changed "Library/Application Support/Cursor/User/settings.json" changed
+check "status reports a changed folder" has_status changed ".codex/skills/" changed
+check "status reports a new file" has_status new ".cursor/hooks.json" "new on this Mac"
+check "status reports new extensions" has_status changed extensions changed
+check "status reports changed plugins" has_status changed "installed plugins" changed
+check "status ignores the login session" bash -c '! grep -q "cli-config" <<< "$1"' _ "$STATUS"
+HOME="$A" bash "$SCRIPT" export -d "$ARCHIVE" >/dev/null
+check "exporting clears the changes" bash -c '! grep -q "^ITEM" <<< "$1"' _ "$(status_of "$A")"
+mkdir -p "$A/.codex/skills/.system/ignored" && echo x > "$A/.codex/skills/.system/ignored/f"
+check "status ignores Codex .system" bash -c '! grep -q "^ITEM" <<< "$1"' _ "$(status_of "$A")"
+
 echo
 if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES check(s) failed"

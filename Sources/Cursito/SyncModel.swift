@@ -53,6 +53,8 @@ final class SyncModel {
 
     private(set) var info: ExportInfo?
     private(set) var infoProblem: String?
+    /// What changed on this Mac since its last export or import; nil before the first one.
+    private(set) var localChanges: LocalChanges?
     private(set) var activity: Activity = .idle {
         didSet { updateIconActivity() }
     }
@@ -94,6 +96,8 @@ final class SyncModel {
 
     var encryptsExports: Bool { passphrase != nil }
 
+    var hasUnexportedChanges: Bool { localChanges.map { !$0.isEmpty } ?? false }
+
     var syncPath: String { syncFolder.appending(path: Self.archiveName).path }
 
     var syncFolderDisplay: String {
@@ -109,19 +113,28 @@ final class SyncModel {
         case .exporting: "arrow.up.circle"
         case .quittingCursor, .importing: "arrow.down.circle"
         case .idle, .checking:
-            info?.isPendingImport == true
-                ? "arrow.triangle.2.circlepath.circle.fill"
-                : "arrow.triangle.2.circlepath"
+            switch (info?.isPendingImport == true, hasUnexportedChanges) {
+            case (true, true): "exclamationmark.arrow.triangle.2.circlepath"
+            case (true, false): "arrow.triangle.2.circlepath.circle.fill"
+            case (false, true): "arrow.triangle.2.circlepath.circle"
+            case (false, false): "arrow.triangle.2.circlepath"
+            }
         }
     }
 
     // MARK: - Actions
 
-    /// Re-reads who exported last and the local backups. Skipped while another run is going.
+    /// Re-reads who exported last, what changed here since and the local backups.
+    /// Skipped while another run is going.
     func refresh() async {
         loadBackups()
         loadPreviousExports()
         guard !isBusy else { return }
+
+        let status = await sync("status", syncPath: syncPath, porcelain: true)
+        if status.succeeded {
+            localChanges = LocalChanges(porcelain: status.output)
+        }
 
         guard FileManager.default.fileExists(atPath: syncPath) || hasICloudPlaceholder else {
             info = nil
@@ -318,9 +331,13 @@ final class SyncModel {
             }
         }
         let cursorWasRunning = CursorApp.isRunning
-        let message = cursorWasRunning
+        var message = cursorWasRunning
             ? "Cursito quits Cursor, backs up this Mac's setup and replaces it. Cursor reopens when it's done."
             : "Cursito backs up this Mac's setup and replaces it."
+        if let localChanges, !localChanges.isEmpty {
+            message += "\n\nThis Mac has changes you haven't exported (\(localChanges.summary(listing: 4))). "
+                + "The import replaces them; the backup keeps a copy."
+        }
         guard confirm(title: title, message: message, action: "Import") else { return false }
 
         if cursorWasRunning {

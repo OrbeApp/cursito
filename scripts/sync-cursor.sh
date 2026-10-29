@@ -10,6 +10,7 @@
 #   sync-cursor.sh import        # other Mac: apply the export (backs up first)
 #   sync-cursor.sh info          # who exported, when, and with which Cursor
 #   sync-cursor.sh verify        # check the export can be read (and decrypted)
+#   sync-cursor.sh status        # what changed on this Mac since its last export or import
 #
 # Options (before or after the command):
 #   -d PATH   sync location; a .tar.gz/.tgz path is used as an archive
@@ -43,6 +44,7 @@ SYNC_PATH="$ROOT/cursor-sync"
 STATE_ROOT="$HOME/.cursito"
 BACKUP_ROOT="$STATE_ROOT/backups"
 LAST_IMPORT_FILE="$STATE_ROOT/last-import"
+LAST_SYNC_FILE="$STATE_ROOT/last-sync"
 BACKUPS_KEPT=5
 EXPORTS_KEPT=3
 PREVIOUS_EXPORTS="previous-exports"
@@ -309,6 +311,105 @@ elif action == "import":
 PY
 }
 
+# Fingerprint of this Mac's synced setup, one "<item><TAB><sha256>" line per item named
+# as in `diff`; "missing" when it doesn't exist, "-" when it can't be read (not compared).
+# Contents only, so a rewrite that changes nothing doesn't count.
+write_snapshot() {
+  local out="$1" cli extensions="$WORK/snapshot-extensions.txt"
+  cli="$(cursor_cli)"
+  if [ -z "$cli" ] || ! "$cli" --list-extensions > "$extensions" 2>/dev/null; then
+    rm -f "$extensions"
+  fi
+  python3 - "$out" "$HOME" "$STATE_DB" "$extensions" "$CLI_CONFIG" "${SESSION_KEYS[*]}" \
+    "${FILES[@]}" --dirs "${DIRS[@]}" <<'PY'
+import hashlib, json, os, sqlite3, sys
+from urllib.parse import quote
+
+out, home, db, extensions, cli_config, session_keys = sys.argv[1:7]
+rest = sys.argv[7:]
+files, dirs = rest[:rest.index("--dirs")], rest[rest.index("--dirs") + 1:]
+# Same exclusions as the rsync copies
+SKIPPED = {".DS_Store", ".system"}
+
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+def file_hash(rel):
+    path = os.path.join(home, rel)
+    if not os.path.isfile(path):
+        return "missing"
+    with open(path, "rb") as f:
+        data = f.read()
+    if rel == cli_config:
+        try:
+            config = json.loads(data)
+            for key in session_keys.split():
+                config.pop(key, None)
+            data = json.dumps(config, sort_keys=True).encode()
+        except ValueError:
+            pass
+    return sha(data)
+
+def dir_hash(rel):
+    top = os.path.join(home, rel)
+    if not os.path.isdir(top):
+        return "missing"
+    entries = []
+    for root, subdirs, names in os.walk(top):
+        subdirs[:] = sorted(d for d in subdirs if d not in SKIPPED)
+        for name in sorted(set(names) | set(subdirs)):
+            path = os.path.join(root, name)
+            short = os.path.relpath(path, top)
+            if os.path.islink(path):
+                entries.append(f"L {short} {os.readlink(path)}")
+                if name in subdirs:
+                    subdirs.remove(name)
+            elif name in names and name not in SKIPPED:
+                with open(path, "rb") as f:
+                    entries.append(f"F {short} {sha(f.read())}")
+    return sha("\n".join(entries).encode())
+
+def plugins_hash():
+    try:
+        con = sqlite3.connect(f"file:{quote(db)}?mode=ro", uri=True)
+        rows = con.execute(
+            "SELECT key, value FROM ItemTable WHERE key >= ? AND key < ?",
+            ("cursor.plugins.installedIds.", "cursor.plugins.installedIds/"),
+        ).fetchall()
+    except sqlite3.Error:
+        return "-"
+    data = {k: v.decode() if isinstance(v, bytes) else v for k, v in rows}
+    return sha(json.dumps(data, sort_keys=True).encode())
+
+def extensions_hash():
+    if not os.path.isfile(extensions):
+        return "-"
+    with open(extensions) as f:
+        ids = {line.strip().split("@")[0].lower() for line in f if line.strip()}
+    return sha("\n".join(sorted(ids)).encode())
+
+with open(out, "w") as f:
+    for rel in files:
+        f.write(f"{rel}\t{file_hash(rel)}\n")
+    for rel in dirs:
+        f.write(f"{rel}/\t{dir_hash(rel)}\n")
+    f.write(f"installed plugins\t{plugins_hash()}\n")
+    f.write(f"extensions\t{extensions_hash()}\n")
+PY
+}
+
+# Remembers this Mac's setup right after an export or import, for `status`
+save_last_sync() {
+  local snapshot="$WORK/last-sync"
+  mkdir -p "$STATE_ROOT" && chmod 700 "$STATE_ROOT"
+  if write_snapshot "$snapshot.items"; then
+    { printf 'kind=%s\nepoch=%s\n' "$1" "$(date +%s)"; cat "$snapshot.items"; } > "$snapshot"
+    mv -f "$snapshot" "$LAST_SYNC_FILE"
+  else
+    rm -f "$LAST_SYNC_FILE"
+  fi
+}
+
 # Up to 8 lines of "diff -rq" with short paths
 print_dir_diff() {
   local item="$1" output="$2" local_dir="$3" export_dir="$4" count=0 row
@@ -562,6 +663,7 @@ cmd_export() {
     mkdir -p "$(dirname "$SYNC_PATH")"
     mv "$out" "$SYNC_PATH" || die "can't move the export to $SYNC_PATH"
   fi
+  save_last_sync export
 
   say
   say "${GREEN}Export ready.${RESET} On the other Mac: ${BOLD}sync-cursor.sh import${RESET}"
@@ -602,6 +704,43 @@ cmd_info() {
   else
     echo "${DIM}Already imported on this Mac.${RESET}"
   fi
+}
+
+# ------------------------------------------------------------ status
+# Items whose contents changed since this Mac's last export or import. Doesn't read
+# the sync location, so it's cheap and works with the export still in iCloud.
+cmd_status() {
+  local current="$WORK/snapshot" kind epoch item state count=0
+  if [ ! -f "$LAST_SYNC_FILE" ]; then
+    [ "$PORCELAIN" -eq 1 ] && echo "last_sync=none" \
+      || echo "No export or import on this Mac yet; run one to start tracking changes."
+    return 0
+  fi
+  kind="$(sed -n 's/^kind=//p' "$LAST_SYNC_FILE")"
+  epoch="$(sed -n 's/^epoch=//p' "$LAST_SYNC_FILE")"
+  write_snapshot "$current" || die "couldn't read this Mac's setup"
+
+  if [ "$PORCELAIN" -eq 1 ]; then
+    echo "last_sync=$kind"
+    echo "last_sync_epoch=$epoch"
+  else
+    echo "Since the last $kind on this Mac (${BOLD}$(date -r "$epoch" '+%Y-%m-%d %H:%M')${RESET}):"
+    echo
+  fi
+  while IFS=$'\t' read -r item state; do
+    count=$((count + 1))
+    case "$state" in
+      new)     line new "$item" "new on this Mac" ;;
+      deleted) line changed "$item" "deleted" ;;
+      *)       line changed "$item" "changed" ;;
+    esac
+  done < <(awk -F'\t' '
+    NR == FNR { if (NF == 2) saved[$1] = $2; next }
+    ($1 in saved) && saved[$1] != "-" && $2 != "-" && saved[$1] != $2 {
+      print $1 "\t" (saved[$1] == "missing" ? "new" : $2 == "missing" ? "deleted" : "changed")
+    }' "$LAST_SYNC_FILE" "$current")
+  [ "$count" -eq 0 ] && say "${GREEN}No changes.${RESET}"
+  return 0
 }
 
 # ------------------------------------------------------------ diff
@@ -767,6 +906,7 @@ cmd_import() {
 
   manifest_value epoch > "$LAST_IMPORT_FILE"
   prune_backups
+  save_last_sync import
 
   if [ "$PORCELAIN" -eq 1 ]; then
     echo "backup=$backup"
@@ -788,6 +928,7 @@ case "$COMMAND" in
   import) cmd_import ;;
   info)   cmd_info ;;
   verify) cmd_verify ;;
+  status) cmd_status ;;
   "")     usage 1 ;;
   *)      echo "Unknown command: $COMMAND" >&2; usage 1 ;;
 esac
