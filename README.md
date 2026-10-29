@@ -1,4 +1,19 @@
-# Cursito
+<h1 align="center">Cursito</h1>
+
+<p align="center">
+  <a href="#install"><img src="https://img.shields.io/badge/macOS-14%2B-blue" alt="macOS 14+"></a>
+  <a href="Package.swift"><img src="https://img.shields.io/badge/Swift-6-orange" alt="Swift 6"></a>
+  <a href="https://github.com/OrbeApp/cursito/releases/latest"><img src="https://img.shields.io/github/v/release/OrbeApp/cursito" alt="Latest release"></a>
+  <a href="https://github.com/OrbeApp/cursito/actions/workflows/ci.yml"><img src="https://github.com/OrbeApp/cursito/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/OrbeApp/cursito" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
+    <img src="docs/screenshot-light.png" width="368" alt="Cursito's menu: the Cursor setup from the other Mac waiting to be imported, this cycle's spend against a budget, and git repos with new commits">
+  </picture>
+</p>
 
 Cursor has no built-in settings sync. Cursito is a small macOS menu bar app that
 copies your Cursor setup from one Mac to another through iCloud Drive (or any
@@ -77,8 +92,16 @@ folders (Homebrew, nvm, bun, cargo, `~/.local/bin`…), not in your shell's
 
 ## Install
 
-Requires macOS 14 or later and Xcode (or the Command Line Tools with Swift 6).
-Build from source on each Mac:
+Requires macOS 14 or later, on each Mac.
+
+**Download:** get `Cursito.zip` from the
+[latest release](https://github.com/OrbeApp/cursito/releases/latest), unzip it
+and move `Cursito.app` to `/Applications`. The build isn't notarized yet, so
+the first time right-click the app and choose **Open** (or run
+`xattr -dr com.apple.quarantine /Applications/Cursito.app`).
+
+**Build from source** with Xcode or the Command Line Tools (Swift 6), which
+avoids that warning:
 
 ```bash
 git clone https://github.com/OrbeApp/cursito.git

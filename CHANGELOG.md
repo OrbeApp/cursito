@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or hour and sends a notification when one gets new commits.
 - Pushing a `vX.Y.Z` tag publishes the GitHub release with `Cursito.zip` and
   the version's CHANGELOG notes.
+- README badges, a screenshot and download instructions.
 
 ## [1.0.0] - 2026-10-29
 
