@@ -1,0 +1,10 @@
+.DS_Store
+/.build/
+/.swiftpm/
+/build/
+*.xcodeproj/
+xcuserdata/
+
+# Exports hold plain-text MCP tokens
+/cursor-sync/
+*.tar.gz
