@@ -14,6 +14,12 @@ folder both Macs can see).
 Sync goes one way: the Mac that exports last is the source of truth. Cursito
 warns you before overwriting an export the other Mac hasn't imported yet.
 
+**Cursor Usage** shows what you've spent in the current billing cycle and how
+close you are to your on-demand limit. **Details** breaks it down by model and
+by day, and lists every team member's spend. It reads Cursor's
+[Admin API](https://cursor.com/docs/account/teams/admin-api), so it needs an
+Enterprise team and an admin key (see [Cursor Usage](#cursor-usage)).
+
 As an extra, **Git Repos** keeps the code itself in step: point it at the
 folder that holds your repos and **Pull All** fetches every repo and
 fast-forwards the ones that are behind. It never merges or rebases; repos with
@@ -59,6 +65,39 @@ there.
 
 The default sync folder is `iCloud Drive/Cursito`. Use **Change…** in the menu
 to pick another one; both Macs need to point at the same folder.
+
+## Cursor Usage
+
+1. In the [Cursor dashboard](https://cursor.com/dashboard), a team admin opens
+   **API Keys** and creates a key (`crsr_…`).
+2. In Cursito, **Connect Admin API Key…**, paste it and check the email. It
+   defaults to the account Cursor is signed in with on this Mac.
+
+Cursito checks the key against the API before saving it in your login
+keychain, never in its preferences or on disk. It only calls
+`/teams/spend` and `/teams/filtered-usage-events`, but the key itself has
+admin rights over the team, so treat it like a password. **Settings… →
+Disconnect** in the Details window removes it.
+
+**Show spend in the menu bar** puts this cycle's spend next to the icon.
+
+The warning measures spend against your per-user on-demand limit in Cursor
+or, if you have none, against a **monthly budget** you set in Cursito (it
+counts everything spent in the cycle, included usage too). Once spend
+reaches 80% of it, the icon turns into a gauge with the percentage, and into
+a warning sign past 100%, whether or not the spend is shown. The menu next to
+the checkbox sets the budget, changes the threshold (50–100%, or never) and
+can send a macOS notification: once when you cross the threshold and once
+more past 100%, per billing cycle. Notifications need the built app; they're
+off under `swift run`.
+
+Cursor aggregates usage hourly, so Cursito refreshes at most once an hour in
+the background; the refresh button forces it. Costs are what Cursor
+counts towards spend (`chargedCents`), included usage and on-demand alike.
+
+The Admin API is Cursor's only documented way to read usage. Apps that read
+the session of the Cursor app itself stopped working when Cursor started
+encrypting it with the keychain, and Cursito doesn't try to get around that.
 
 ## Command line
 
@@ -119,7 +158,7 @@ backup lets you roll back.
 
 ```bash
 swift run Cursito          # run the app from the checkout (uses scripts/sync-cursor.sh)
-swift test                 # parsing and import-state rules
+swift test                 # parsing, import-state rules and the usage client
 scripts/test-sync.sh       # end-to-end export/import between two fake home folders
 scripts/test-update-repos.sh   # update-repos.sh against throwaway git repos
 ```

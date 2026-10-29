@@ -3,14 +3,18 @@ import SwiftUI
 
 struct MenuContent: View {
     let model: SyncModel
+    let usage: UsageModel
     let repos: ReposModel
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(MenuBarLabel.showsSpendKey) private var showsSpendInMenuBar = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Cursito").font(.headline)
             Divider()
             cursorSection
+            Divider()
+            usageSection
             Divider()
             reposSection
             Divider()
@@ -155,6 +159,169 @@ struct MenuContent: View {
         }
     }
 
+    private var usageSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader(
+                "Cursor Usage",
+                systemImage: "chart.bar.xaxis",
+                activity: usage.isLoading ? "Loading…" : nil
+            )
+
+            if !usage.isConnected {
+                Text("What you've spent this billing cycle, by model and by day. Needs an Admin API key from an Enterprise team.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    show(WindowID.usage)
+                } label: {
+                    Label("Connect Admin API Key…", systemImage: "key")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            } else {
+                if let me = usage.me {
+                    usageCard(me)
+                }
+                usageStatusRow
+                HStack {
+                    Toggle("Show spend in the menu bar", isOn: $showsSpendInMenuBar)
+                        .toggleStyle(.checkbox)
+                    Spacer(minLength: 4)
+                    if usage.me != nil {
+                        limitWarningMenu
+                    }
+                }
+                .font(.caption)
+            }
+        }
+        .task { await usage.refreshIfStale() }
+    }
+
+    private var limitWarningMenu: some View {
+        let cap = usage.spendCap
+        let title = if cap == nil {
+            "Set a Budget"
+        } else if usage.warningPercent == 0 {
+            "No warning"
+        } else {
+            "Warn at \(usage.warningPercent)%"
+        }
+
+        return Menu(title) {
+            Picker("Warn at", selection: Binding(
+                get: { usage.warningPercent },
+                set: { usage.warningPercent = $0 }
+            )) {
+                ForEach(UsageModel.warningPercentChoices, id: \.self) { percent in
+                    Text("\(percent)% of my \(cap?.name ?? "budget")").tag(percent)
+                }
+                Text("Never").tag(0)
+            }
+            .pickerStyle(.inline)
+            .disabled(cap == nil)
+            Toggle("Send a Notification", isOn: Binding(
+                get: { usage.notifiesNearLimit },
+                set: { isOn in Task { await usage.setNotifiesNearLimit(isOn) } }
+            ))
+            .disabled(cap == nil || usage.warningPercent == 0)
+            Divider()
+            if case .cursorLimit(let dollars) = cap {
+                Text("Using your Cursor limit of \((dollars * 100).centsText)")
+            } else {
+                Button(usage.monthlyBudget > 0
+                    ? "Monthly Budget: \((Double(usage.monthlyBudget) * 100).centsText)…"
+                    : "Set Monthly Budget…"
+                ) {
+                    usage.editBudget()
+                }
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .controlSize(.small)
+        .fixedSize()
+        .help("When the menu bar icon warns that your spend is close to your limit or budget")
+    }
+
+    private func usageCard(_ me: MemberSpend) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(me.totalCents.centsText)
+                    .font(.title3.weight(.semibold))
+                    .monospacedDigit()
+                Text("this cycle")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let cycleStart = usage.cycleStart {
+                    Text("since \(cycleStart.dayText)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if let fraction = usage.capFraction, let cap = usage.spendCap {
+                ProgressView(value: min(fraction, 1))
+                    .tint(usage.limitWarning != nil ? Color.orange : Color.accentColor)
+                Text(capLine(me, cap: cap, fraction: fraction))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("On-demand \(me.onDemandCents.centsText) · no limit")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            if let top = usage.topModel {
+                Text("Top model: \(top.model) · \(top.chargedCents.centsText)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func capLine(_ me: MemberSpend, cap: UsageModel.SpendCap, fraction: Double) -> String {
+        let capText = (cap.dollars * 100).centsText
+        switch cap {
+        case .cursorLimit:
+            return "On-demand \(me.onDemandCents.centsText) of \(capText) limit"
+        case .budget:
+            let percent = fraction.formatted(.percent.precision(.fractionLength(0)).locale(.ui))
+            return "\(percent) of \(capText) budget · on-demand \(me.onDemandCents.centsText)"
+        }
+    }
+
+    private var usageStatusRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if let problem = usage.problem {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(problem)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let lastUpdated = usage.lastUpdated {
+                Text("Updated \(lastUpdated.relativeText)")
+                    .foregroundStyle(.secondary)
+                    .help("Cursor aggregates usage hourly, so Cursito refreshes at most once an hour.")
+            }
+            Spacer(minLength: 4)
+            Button {
+                Task { await usage.refresh() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .disabled(usage.isLoading)
+            .help("Refresh now")
+            Button("Details") { show(WindowID.usage) }
+                .buttonStyle(.link)
+        }
+        .font(.caption)
+    }
+
     private var reposSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             sectionHeader(
@@ -251,6 +418,8 @@ struct MenuContent: View {
             ))
             .toggleStyle(.checkbox)
             Spacer()
+            Button("About") { AboutPanel.show() }
+                .buttonStyle(.link)
             Button("Quit Cursito") { NSApp.terminate(nil) }
                 .buttonStyle(.link)
                 .keyboardShortcut("q")
