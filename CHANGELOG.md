@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sync-cursor.sh status` prints the same from the command line.
 - **Fetch in the Background…** fetches every repo every 15 minutes, 30 minutes
   or hour and sends a notification when one gets new commits.
+- Pushing a `vX.Y.Z` tag publishes the GitHub release with `Cursito.zip` and
+  the version's CHANGELOG notes.
 
 ## [1.0.0] - 2026-10-29
 

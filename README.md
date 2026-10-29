@@ -237,9 +237,15 @@ Cursor setup.
 
 The update check compares `CFBundleShortVersionString` in
 `Resources/Info.plist` with the tag of the latest published GitHub release
-(drafts and prereleases don't count). To release, bump the version in
-`Info.plist` and `CHANGELOG.md`, tag `vX.Y.Z`, and publish a GitHub release
-for that tag with `build/Cursito.zip` from `scripts/build-app.sh --zip`.
+(drafts and prereleases don't count). To release:
+
+1. On `develop`, bump `CFBundleShortVersionString` in `Info.plist` and turn
+   `## [Unreleased]` in `CHANGELOG.md` into `## [X.Y.Z] - YYYY-MM-DD`.
+2. Merge `develop` into `main` with a merge commit, tag the merge `vX.Y.Z` and
+   push the tag.
+3. The Release workflow checks the tag matches `Info.plist`, runs the tests,
+   builds `Cursito.zip` and publishes the release with that version's
+   CHANGELOG section (`scripts/release-notes.sh X.Y.Z` prints it locally).
 
 ### Signed releases
 
