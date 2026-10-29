@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Cloud Agents** in the menu: your running and recently finished Cursor
+  cloud agents, with the repo, branch and pull request, and a notification
+  when one finishes or fails. Reads Cursor's Cloud Agents API (public beta)
+  with a user API key kept in the login keychain, only through GET requests;
+  refreshes every minute while an agent runs and every 5 minutes otherwise.
+  **Heading Out** mentions the agents still running.
+
 ## [1.1.0] - 2026-10-29
 
 ### Added

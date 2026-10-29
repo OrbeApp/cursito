@@ -13,6 +13,11 @@ struct KeychainItem: Sendable {
         account: "cursor-admin-api-key",
         label: "Cursito: Cursor Admin API key"
     )
+    static let cursorUserAPIKey = KeychainItem(
+        service: "com.orbeapp.cursito",
+        account: "cursor-user-api-key",
+        label: "Cursito: Cursor API key (cloud agents)"
+    )
     static let exportPassphrase = KeychainItem(
         service: "com.orbeapp.cursito",
         account: "export-passphrase",

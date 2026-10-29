@@ -4,6 +4,7 @@ import SwiftUI
 struct MenuContent: View {
     let model: SyncModel
     let usage: UsageModel
+    let cloudAgents: CloudAgentsModel
     let repos: ReposModel
     let handoff: Handoff
     let updates: UpdateChecker
@@ -31,6 +32,8 @@ struct MenuContent: View {
             cursorSection
             Divider()
             usageSection
+            Divider()
+            cloudAgentsSection
             Divider()
             reposSection
             Divider()
@@ -406,6 +409,183 @@ struct MenuContent: View {
             .help("Refresh now")
             Button("Details") { show(WindowID.usage) }
                 .buttonStyle(.link)
+        }
+        .font(.caption)
+    }
+
+    private static let maxRunningAgentRows = 3
+    private static let maxAgentRows = 5
+
+    private var cloudAgentsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionHeader(
+                "Cloud Agents",
+                systemImage: "cloud",
+                activity: cloudAgents.isLoading && cloudAgents.lastUpdated == nil ? "Loading…" : nil
+            )
+
+            if !cloudAgents.isConnected {
+                Text("Running and recently finished cloud agents, notified when one ends. Read-only; needs a Cursor API key.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    show(WindowID.cloudAgents)
+                } label: {
+                    Label("Connect Cursor API Key…", systemImage: "key")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            } else {
+                cloudAgentRows
+                cloudAgentsStatusRow
+            }
+        }
+        .task { await cloudAgents.refreshIfStale() }
+    }
+
+    private var cloudAgentRows: some View {
+        let running = cloudAgents.running
+        let shownRunning = running.prefix(Self.maxRunningAgentRows)
+        let recent = cloudAgents.recent.prefix(max(2, Self.maxAgentRows - shownRunning.count))
+
+        return VStack(alignment: .leading, spacing: 6) {
+            if running.isEmpty && cloudAgents.lastUpdated != nil {
+                Text("No cloud agents running")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(shownRunning) { cloudAgentRow($0) }
+            if running.count > shownRunning.count {
+                Text("and \(running.count - shownRunning.count) more running")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(recent) { cloudAgentRow($0) }
+        }
+    }
+
+    private func cloudAgentRow(_ activity: CloudAgentActivity) -> some View {
+        // A finished agent's pull request is usually what you want to look at next.
+        let prURL = activity.endedAt == nil ? nil : activity.prURL
+        let url = prURL ?? activity.agent.url
+
+        return Button {
+            if let url { NSWorkspace.shared.open(url) }
+        } label: {
+            HStack(spacing: 8) {
+                cloudAgentStatusIcon(activity)
+                    .frame(width: 16)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(activity.title)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                    if let location = activity.location {
+                        Text(location)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 4)
+                Text(cloudAgentTrailingText(activity))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(url == nil)
+        .help(cloudAgentHelp(activity, opensPullRequest: prURL != nil))
+    }
+
+    @ViewBuilder
+    private func cloudAgentStatusIcon(_ activity: CloudAgentActivity) -> some View {
+        if activity.isRunning {
+            ProgressView().controlSize(.mini)
+        } else {
+            switch activity.run?.status {
+            case .finished:
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+            case .error:
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+            case .cancelled:
+                Image(systemName: "stop.circle").foregroundStyle(.secondary)
+            case .expired:
+                Image(systemName: "clock.badge.xmark").foregroundStyle(.secondary)
+            default:
+                Image(systemName: "circle.dashed").foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func cloudAgentTrailingText(_ activity: CloudAgentActivity) -> String {
+        if let endedAt = activity.endedAt { return endedAt.shortRelativeText }
+        switch activity.run?.status {
+        case .creating: return "Starting"
+        case .waitingForBackgroundWork: return "Waiting"
+        default: return activity.isRunning ? "Running" : ""
+        }
+    }
+
+    private func cloudAgentHelp(_ activity: CloudAgentActivity, opensPullRequest: Bool) -> String {
+        var lines: [String] = []
+        switch activity.run?.status {
+        case .finished: lines.append("Finished")
+        case .error: lines.append("Failed")
+        case .cancelled: lines.append("Cancelled")
+        case .expired: lines.append("Expired")
+        default: break
+        }
+        if let result = activity.run?.result {
+            lines.append(String(result.prefix(300)))
+        }
+        if activity.agent.url != nil {
+            lines.append(opensPullRequest ? "Click to open the pull request." : "Click to open it in Cursor.")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private var cloudAgentsStatusRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            if let problem = cloudAgents.problem {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                Text(problem)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let lastUpdated = cloudAgents.lastUpdated {
+                Text("Updated \(lastUpdated.relativeText)")
+                    .foregroundStyle(.secondary)
+                    .help("Cursito checks every minute while an agent runs, every 5 minutes otherwise, and when you open the menu.")
+            }
+            Spacer(minLength: 4)
+            Button {
+                Task { await cloudAgents.refresh() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .disabled(cloudAgents.isLoading)
+            .help("Refresh now")
+            Menu {
+                Toggle("Notify When an Agent Finishes", isOn: Binding(
+                    get: { cloudAgents.notifiesWhenRunsEnd },
+                    set: { isOn in Task { await cloudAgents.setNotifiesWhenRunsEnd(isOn) } }
+                ))
+                Button("Open Cloud Agents in Cursor") {
+                    NSWorkspace.shared.open(URL(string: "https://cursor.com/agents")!)
+                }
+                Divider()
+                Text("Connected as \(cloudAgents.account)")
+                Button("API Key…") { show(WindowID.cloudAgents) }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Notifications, and the API key: replace it or disconnect")
         }
         .font(.caption)
     }
