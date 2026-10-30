@@ -11,7 +11,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/screenshot-dark.png">
-    <img src="docs/screenshot-light.png" width="368" alt="Cursito's menu: the Cursor setup from the other Mac waiting to be imported, this cycle's spend against a budget, and git repos with new commits">
+    <img src="docs/screenshot-light.png" width="368" alt="Cursito's menu: the Cursor setup from the other Mac waiting to be imported next to this Mac's unexported changes, this cycle's spend against a budget, cloud agents running, finished and failed, and git repos with new commits from the background fetch">
   </picture>
 </p>
 
