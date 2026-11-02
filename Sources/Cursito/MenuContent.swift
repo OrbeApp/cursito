@@ -41,6 +41,8 @@ struct MenuContent: View {
         }
         .padding(16)
         .frame(width: 320)
+        // Without this the menu bar window keeps its opening height when sections grow, clipping top and bottom.
+        .fixedSize(horizontal: false, vertical: true)
         .task { await model.refresh() }
         .onAppear { model.isMenuOpen = true }
         .onDisappear { model.isMenuOpen = false }

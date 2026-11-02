@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The menu no longer looks cut off at the top and bottom, without its rounded
+  corners, when a section grows after it opens.
+
 ## [1.2.0] - 2026-10-29
 
 ### Added
