@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-11-02
+
 ### Fixed
 
 - The menu no longer looks cut off at the top and bottom, without its rounded
@@ -100,7 +102,8 @@ First release.
 - Unit tests plus end-to-end test scripts for sync and repo updates, and a CI
   workflow.
 
-[Unreleased]: https://github.com/OrbeApp/cursito/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/OrbeApp/cursito/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/OrbeApp/cursito/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/OrbeApp/cursito/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/OrbeApp/cursito/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/OrbeApp/cursito/releases/tag/v1.0.0
