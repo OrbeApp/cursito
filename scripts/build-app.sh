@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# build-app.sh — builds a universal Cursito.app into ./build.
+# build-app.sh — builds an Apple silicon (arm64) Cursito.app into ./build.
 #
 # Usage:
 #   scripts/build-app.sh             # build/Cursito.app, signed ad hoc (fine on your own Macs)
@@ -28,8 +28,8 @@ done
 
 cd "$ROOT"
 echo "Building release binary…"
-swift build -c release --arch arm64 --arch x86_64
-BIN_DIR="$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)"
+swift build -c release --arch arm64
+BIN_DIR="$(swift build -c release --arch arm64 --show-bin-path)"
 
 echo "Assembling ${APP}…"
 rm -rf "$APP"
